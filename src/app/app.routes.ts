@@ -9,7 +9,8 @@ export const routes: Routes = [
     },
     {
         path: 'summarizer',
-        component: SummarizationComponent
+        component: SummarizationComponent,
+        title: 'Summarization',
     },
     {
         path: '**',

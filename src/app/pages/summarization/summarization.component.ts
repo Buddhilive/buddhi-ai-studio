@@ -1,24 +1,15 @@
-import { Component, ElementRef, inject, model, OnInit, ViewChild } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { DropdownComponent } from '../../components/dropdown/dropdown.component';
-import { IndexedDBService } from '../../services/indexed-db.service';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { SpinnerComponent } from "../../components/spinner/spinner.component";
 
 @Component({
   selector: 'berkeliumlabs-summarization',
-  imports: [RouterLink, DropdownComponent, ReactiveFormsModule, SpinnerComponent],
+  imports: [RouterLink, ReactiveFormsModule],
   templateUrl: './summarization.component.html',
   styleUrl: './summarization.component.scss',
 })
 export class SummarizationComponent implements OnInit {
-  @ViewChild('textInput') textInput!: ElementRef<HTMLDivElement>;
-  private _dbService = inject(IndexedDBService);
-
   toolForm!: FormGroup;
-  content = ``;
-  summarizedContent = '';
-  availableModels: BkDropdownOptions[] = [];
   isInitializing = true;
   inProgress = false;
 
@@ -28,46 +19,25 @@ export class SummarizationComponent implements OnInit {
 
   private initTool(): void {
     this.toolForm = new FormGroup({
-      model: new FormControl('', Validators.required),
+      content: new FormControl('', Validators.required),
+      response: new FormControl(''),
     });
-
-    this._dbService
-    .getAll<string>('models-summarization')
-    .subscribe((models) => {
-      if (models) {
-        models.forEach((model) => {
-          const modelOption: BkDropdownOptions = {
-            id: model,
-            label: model,
-          };
-
-          this.availableModels.push(modelOption);
-        });
-      }
-      this.isInitializing = false;
-    });
-  }
-
-  onContentChange(event: Event) {
-    const target = event.target as HTMLDivElement;
-    this.content = target.innerHTML;
   }
 
   summarize() {
     if (typeof Worker !== 'undefined') {
       const worker = new Worker(
-        new URL('../../functions/summarizer.worker', import.meta.url)
+        new URL('../../core/summarizer.worker', import.meta.url)
       );
 
       worker.onmessage = ({ data }) => {
         // console.log('Response: ', data);
-        this.summarizedContent = data[0].summary_text;
+        this.toolForm.get('response')?.setValue(data[0].summary_text);
         this.inProgress = false;
       };
 
       const data = {
-        content: this.content,
-        model: this.toolForm.get('model')?.value,
+        content: this.toolForm.get('content')?.value,
       };
       this.inProgress = true;
       worker.postMessage(data);
@@ -77,8 +47,6 @@ export class SummarizationComponent implements OnInit {
   }
 
   clearContent() {
-    this.content = '';
-    this.summarizedContent = '';
-    this.textInput.nativeElement.innerHTML = '';
+    this.toolForm.reset();
   }
 }
