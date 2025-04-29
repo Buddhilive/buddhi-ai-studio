@@ -32,9 +32,12 @@
               }
             ],
             "styles": [
+              "public/dist/css/adminlte.css",
               "src/styles.scss"
             ],
-            "scripts": [],
+            "scripts": [
+              "public/dist/js/adminlte.js"
+            ],
             "server": "src/main.server.ts",
             "prerender": true,
             "ssr": {
