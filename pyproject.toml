@@ -10,7 +10,8 @@ dependencies = [
     "pyloid",
     "pyloid-adapter",
     "fastapi",
-    "uvicorn"
+    "uvicorn",
+    "llama-cpp-python>=0.3.16",
 ]
 
 [dependency-groups]
