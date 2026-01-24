@@ -56,6 +56,42 @@ class Settings(BaseSettings):
         description="Interval between progress updates in seconds",
     )
 
+    # Inference configuration
+    default_context_size: int = Field(
+        default=4096,
+        ge=512,
+        le=131072,
+        description="Default context window size for models",
+    )
+
+    default_n_gpu_layers: int = Field(
+        default=-1,  # -1 = auto-detect / use all GPU layers
+        ge=-1,
+        description="Default number of layers to offload to GPU (-1 for auto)",
+    )
+
+    max_loaded_models: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description="Maximum number of models to keep loaded in memory",
+    )
+
+    inference_timeout: int = Field(
+        default=300,  # 5 minutes
+        ge=30,
+        le=1800,
+        description="Inference timeout in seconds",
+    )
+
+    default_max_tokens: int = Field(
+        default=2048,
+        ge=1,
+        le=131072,
+        description="Default maximum tokens to generate",
+    )
+
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_prefix="BUDDHI_",
