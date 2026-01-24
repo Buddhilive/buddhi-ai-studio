@@ -1,48 +1,66 @@
-# Pyloid App
+# Buddhi AI Studio
 
-This project was created using the Pyloid boilerplate.
+Buddhi AI Studio is a user-friendly desktop application designed to simplify the process of discovering, downloading, and running the Gemma family of open models. It provides an intuitive graphical interface for interacting with powerful AI models locally on your machine.
 
-## Prerequisites
+## Project Status
 
-- Python 3.9 or higher
-- Node.js 20 or higher
-- uv package manager
+This project is in the early stages of development. The core structure is in place, but many features are still under construction.
+
+## Project Structure
+
+The application is built with a modern stack, separating the frontend and backend concerns:
+
+-   **`src/`**: Contains the frontend application built with [Next.js](https://nextjs.org/) and [React](https://react.dev/).
+-   **`src-pyloid/`**: Contains the backend service built with Python, which handles model management, server operations, and other core logic.
 
 ## Getting Started
 
-### Initial Setup
+Follow these instructions to set up your local development environment.
 
-To install the required libraries, run the following command:
+### Prerequisites
 
-```bash
-pnpm run setup
-```
+Make sure you have the following tools installed on your system:
 
-### Development Mode
+-   [Node.js](https://nodejs.org/) (v20 or higher recommended)
+-   [pnpm](https://pnpm.io/) package manager
+-   [Python](https://www.python.org/) (v3.9 or higher recommended)
+-   [uv](https://github.com/astral-sh/uv) - An extremely fast Python package installer and resolver.
 
-To run the desktop application in development mode:
+### Installation
+
+1.  **Clone the repository:**
+    ```bash
+    git clone <repository-url>
+    cd buddhi-ai-studio
+    ```
+
+2.  **Run the setup script:**
+
+    This single command will install both the frontend (Node.js) and backend (Python) dependencies.
+    ```bash
+    pnpm run setup:project
+    ```
+    This script executes the following steps:
+    - Installs Node.js packages using `pnpm install`.
+    - Creates a Python virtual environment in `.venv/` using `uv venv`.
+    - Installs Python packages into the virtual environment using `uv sync`.
+
+## Running the Application
+
+To run the application in development mode, use the following command:
 
 ```bash
 pnpm run dev
 ```
 
-### Build
+This will start both the Next.js frontend development server and the Python backend service concurrently. The application window should open automatically once the services are ready.
 
-To build the application:
+## Building the Application
+
+To build the application for production, run:
 
 ```bash
 pnpm run build
 ```
 
-## Project Structure
-
-The project consists of the following main directories and files:
-
-- `dist/`: Directory where the final desktop application build files are stored.
-- `dist-front/`: Directory where the frontend code build files are stored.
-- `src/`: Directory where the frontend source code is stored.
-- `src-pyloid/`: Directory containing the backend source code for the Pyloid application.
-
-## Support
-
-If you encounter any issues or have questions, please create an issue in the repository.
+This command bundles the Next.js frontend and prepares the Python backend for packaging into a distributable desktop application.
