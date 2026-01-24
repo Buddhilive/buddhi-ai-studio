@@ -1,6 +1,0 @@
-@echo off
-echo Initializing Visual Studio Build Environment...
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-echo.
-echo Starting Tauri Dev...
-pnpm tauri dev
