@@ -7,9 +7,12 @@ from pyloid.utils import (
 )
 from pyloid.serve import pyloid_serve
 from pyloid import Pyloid
-from server import adapter
+from server import adapter, set_pyloid_app
 
 app = Pyloid(app_name="buddhi-ai-studio", single_instance=True, server=adapter)
+
+# Initialize model download system with Pyloid app
+set_pyloid_app(app)
 
 app.set_icon(get_production_path("src-pyloid/icons/icon.png"))
 app.set_tray_icon(get_production_path("src-pyloid/icons/icon.png"))
