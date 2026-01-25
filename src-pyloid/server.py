@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 # Import model download routes
-from routes import models_router, chat_router
+from routes import models_router, chat_router, responses_router
 from config import initialize_settings
 from utils import get_models_directory
 from models import ProblemDetail
@@ -185,8 +185,11 @@ def setup_cors():
 # Register model download routes
 app.include_router(models_router, prefix="/api")
 
-# Register OpenAI-compatible chat routes
+# Register OpenAI-compatible chat routes (backward compatibility)
 app.include_router(chat_router)
+
+# Register OpenAI Responses API routes
+app.include_router(responses_router)
 
 
 
