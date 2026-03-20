@@ -16,7 +16,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen w-screen justify-center items-center flex-col gap-4">
+    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
       <h1>Buddhi AI Studio</h1>
       <button onClick={sendMessage} className="bg-blue-500 text-white px-4 py-2 rounded-md">
         Send Message
