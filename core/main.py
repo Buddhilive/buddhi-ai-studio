@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.database.engine import create_db_tables
 from core.models.download import ModelDownload
 from core.routers.downloads import router as downloads_router
+from core.routers.chat import router as chat_router
 from core.database.engine import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,13 @@ async def lifespan(_: FastAPI):
                 )
         finally:
             db.close()
+
+        # Initialize model cache for inference
+        from core.services.model_cache import init_model_cache
+        from core.config import settings
+        init_model_cache(max_models=settings.inference_max_loaded_models)
+        logger.info("Model cache initialized")
+
     except Exception as e:
         logger.error(f"Startup error: {e}")
         raise
@@ -43,6 +51,8 @@ async def lifespan(_: FastAPI):
     yield
 
     # Shutdown
+    from core.services.model_cache import shutdown_model_cache
+    shutdown_model_cache()
     logger.info("Application shutting down")
 
 
@@ -68,6 +78,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(downloads_router, prefix="/api/v1")
+app.include_router(chat_router)  # No prefix - router already has /v1
 
 
 # Welcome GET route for app
