@@ -1,66 +1,77 @@
 # Buddhi AI Studio
 
-Buddhi AI Studio is a user-friendly desktop application designed to simplify the process of discovering, downloading, and running the Gemma family of open models. It provides an intuitive graphical interface for interacting with powerful AI models locally on your machine.
-
-## Project Status
-
-This project is in the early stages of development. The core structure is in place, but many features are still under construction.
+An AI Agent Development Environment consisting of a Next.js frontend and a FastAPI backend.
 
 ## Project Structure
 
-The application is built with a modern stack, separating the frontend and backend concerns:
+The project is structured as a monorepo-style application, where the root directory orchestrates both the frontend and backend components.
 
--   **`src/`**: Contains the frontend application built with [Next.js](https://nextjs.org/) and [React](https://react.dev/).
--   **`src-pyloid/`**: Contains the backend service built with Python, which handles model management, server operations, and other core logic.
+- `core/`: Contains the FastAPI backend source code (`main.py`).
+- `src/app/`: Contains the Next.js frontend code using the App Router.
+- `package.json`: Manages scripts and Node.js dependencies for the entire project.
+- `pyproject.toml`: Manages Python dependencies using `uv`.
+- `.python-version`: Specifies the Python version (3.12+).
 
-## Getting Started
+## Prerequisites
 
-Follow these instructions to set up your local development environment.
+Ensure you have the following installed on your machine:
 
-### Prerequisites
+- **Node.js**: Version 20 or higher (recommended).
+- **pnpm**: Version 9 or higher.
+- **Python**: Version 3.12 or higher.
+- **uv**: A high-performance Python package installer and resolver.
 
-Make sure you have the following tools installed on your system:
+## Development Setup
 
--   [Node.js](https://nodejs.org/) (v20 or higher recommended)
--   [pnpm](https://pnpm.io/) package manager
--   [Python](https://www.python.org/) (v3.9 or higher recommended)
--   [uv](https://github.com/astral-sh/uv) - An extremely fast Python package installer and resolver.
-
-### Installation
-
-1.  **Clone the repository:**
+1.  **Clone the Repository**:
     ```bash
     git clone <repository-url>
     cd buddhi-ai-studio
     ```
 
-2.  **Run the setup script:**
-
-    This single command will install both the frontend (Node.js) and backend (Python) dependencies.
+2.  **Run Initial Setup**:
+    The project uses a unified setup script to install all dependencies for both the frontend and the backend.
     ```bash
     pnpm run setup:project
     ```
-    This script executes the following steps:
-    - Installs Node.js packages using `pnpm install`.
-    - Creates a Python virtual environment in `.venv/` using `uv venv`.
-    - Installs Python packages into the virtual environment using `uv sync`.
+    This command will:
+    - Install Node.js dependencies via `pnpm install`.
+    - Create a Python virtual environment and install dependencies via `uv sync`.
 
 ## Running the Application
 
-To run the application in development mode, use the following command:
+You can start both the frontend and backend development servers simultaneously using a single command:
 
 ```bash
 pnpm run dev
 ```
 
-This will start both the Next.js frontend development server and the Python backend service concurrently. The application window should open automatically once the services are ready.
+- **Frontend**: Accessible at [http://localhost:3434](http://localhost:3434)
+- **Backend (API)**: Accessible at [http://localhost:8484](http://localhost:8484)
 
-## Building the Application
+The backend is configured with CORS to allow requests from the frontend development server.
 
-To build the application for production, run:
+## Core Components
 
-```bash
-pnpm run build
-```
+### Backend (FastAPI)
+The backend is located in the `core/` directory. It uses FastAPI for a high-performance, asynchronous API.
+- **Main Entry Point**: `core/main.py`
+- **Dependencies**: Managed via `pyproject.toml` and `uv.lock`.
 
-This command bundles the Next.js frontend and prepares the Python backend for packaging into a distributable desktop application.
+### Frontend (Next.js)
+The frontend is a modern Next.js application located in the `src/` directory.
+- **Framework**: Next.js 16 (App Router).
+- **Styling**: Tailwind CSS 4.
+- **Communication**: Interacts with the backend via JSON over HTTP.
+
+## Key Scripts
+
+- `pnpm run dev`: Starts both frontend and backend in development mode.
+- `pnpm run setup:project`: Initializes the project by installing all necessary dependencies.
+- `pnpm run build`: Builds the Next.js application for production.
+- `pnpm run start`: Starts the production Next.js server.
+- `pnpm run lint`: Runs ESLint for the frontend.
+
+## Contributing
+
+Please ensure that you have the latest versions of `pnpm` and `uv` installed to maintain consistency across development environments. When adding new Python dependencies, use `uv add <package>` to update `pyproject.toml` and `uv.lock`.
