@@ -1,21 +1,7 @@
 [project]
-name = "pyloid-app"
-version = "1.0.0"
+name = "buddhi-ai-studio"
+version = "0.0.1"
+description = "Buddhi AI Studio is an AI Agent Development Environment"
 readme = "README.md"
-description = "My first application"
-
-requires-python = ">=3.9"
-
-dependencies = [
-    "pyloid",
-    "pyloid-adapter",
-    "fastapi",
-    "uvicorn"
-]
-
-[dependency-groups]
-dev = [
-    "pyloid-builder",
-    "pyloid-watcher",
-    "ruff",
-]
+requires-python = ">=3.12"
+dependencies = ["fastapi[standard]>=0.135.1"]

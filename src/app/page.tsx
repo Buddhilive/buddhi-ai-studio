@@ -1,68 +1,27 @@
-'use client';
-
-import { useState } from 'react';
-
-import { baseAPI, fetch } from 'pyloid-js';
-
+"use client";
+import { useState } from "react";
 
 export default function Home() {
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
+
+  const sendMessage = async () => {
+    const response = await fetch("http://localhost:8484", {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    const data = await response.json();
+    setMessage(data.message);
+  };
 
   return (
-    <div className='flex flex-col items-center justify-center min-h-screen bg-[#242424] text-[rgba(255,255,255,0.87)] p-8 font-sans'>
-      <div className='mb-8'>
-        <img
-          src='/pyloid_icon.png'
-          alt='Pyloid logo'
-          className='h-24 w-24 transition-all duration-300 hover:brightness-110 hover:contrast-125'
-        />
-      </div>
-
-      <h1 className='text-4xl font-bold mb-8'>Pyloid App</h1>
-
-      <div className='flex flex-col sm:flex-row gap-4 mb-8'>
-        <button
-          className='bg-[#1a1a1a] text-white px-5 py-2.5 rounded-lg border border-transparent transition-colors duration-250 hover:border-[#646cff] focus:outline-none focus:ring-4 focus:ring-[#646cff44]'
-          onClick={async () => {
-            
-            const message = await fetch('/greet?name=John').then((res) =>
-              res.text()
-            );
-            
-            setMessage(message);
-          }}
-        >
-          Greet
-        </button>
-        <button
-          className='bg-[#1a1a1a] text-white px-5 py-2.5 rounded-lg border border-transparent transition-colors duration-250 hover:border-[#646cff] focus:outline-none focus:ring-4 focus:ring-[#646cff44]'
-          onClick={async () => {
-            
-            await fetch('/create_window');
-            
-          }}
-        >
-          Create Window
-        </button>
-        <button
-          className='bg-[#1a1a1a] text-white px-5 py-2.5 rounded-lg border border-transparent transition-colors duration-250 hover:border-[#646cff] focus:outline-none focus:ring-4 focus:ring-[#646cff44]'
-          onClick={() => {
-            baseAPI.close();
-          }}
-        >
-          Close
-        </button>
-      </div>
-
-      <div className='text-center'>
-        <p className='mb-4 min-h-[1.5em]'>{message}</p>
-        <a
-          href='https://pyloid.com'
-          className='text-[#646cff] hover:text-[#535bf2] transition-colors duration-250'
-        >
-          Visit Pyloid
-        </a>
-      </div>
+    <div className="flex h-screen w-screen justify-center items-center flex-col gap-4">
+      <h1>Buddhi AI Studio</h1>
+      <button onClick={sendMessage} className="bg-blue-500 text-white px-4 py-2 rounded-md">
+        Send Message
+      </button>
+      <p>Message: {message}</p>
     </div>
   );
 }
