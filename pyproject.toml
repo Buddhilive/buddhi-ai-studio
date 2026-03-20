@@ -1,0 +1,7 @@
+[project]
+name = "buddhi-ai-studio"
+version = "0.0.1"
+description = "Buddhi AI Studio is an AI Agent Development Environment"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["fastapi[standard]>=0.135.1"]
