@@ -1,19 +1,12 @@
 import json
 import logging
 import os
-import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import httpx
-from huggingface_hub import hf_hub_download, list_repo_files
-from huggingface_hub.errors import (
-    RepositoryNotFoundError,
-    GatedRepoError,
-    HfHubHTTPError,
-)
+from huggingface_hub import list_repo_files
 
 logger = logging.getLogger(__name__)
 
@@ -123,9 +116,8 @@ def scan_models_dir() -> None:
             except Exception as e:
                 logger.error(f"Failed to load .verified file {verified_path}: {e}")
         else:
-            # .gguf exists but no .verified sidecar
+            # .gguf exists but no .verified sidecar — mark as corrupted
             logger.warning(f"Found orphaned .gguf file (no .verified sidecar): {gguf_path}")
-            # Try to infer repo_id from filename
             filename_base = gguf_path.stem
             entry = DownloadEntry(
                 id=sanitize_id(filename_base),
@@ -154,72 +146,17 @@ def _find_gguf_filename(repo_id: str, quantization: str) -> str:
         if not gguf_files:
             raise ValueError(f"No .gguf files found in {repo_id}")
 
-        # Try to match quantization (case-insensitive)
         quantization_lower = quantization.lower()
         for filename in gguf_files:
             if quantization_lower in filename.lower():
                 logger.info(f"Found {quantization} match: {filename}")
                 return filename
 
-        # Fallback: use first .gguf
         logger.warning(f"No {quantization} match found; using first .gguf: {gguf_files[0]}")
         return gguf_files[0]
     except Exception as e:
         logger.error(f"Failed to list files for {repo_id}: {e}")
         raise
-
-
-def _get_expected_size(repo_id: str, filename: str, hf_token: Optional[str]) -> Optional[int]:
-    """
-    Get the Content-Length of a file from HuggingFace without downloading.
-    """
-    url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
-    headers = {}
-    if hf_token:
-        headers["Authorization"] = f"Bearer {hf_token}"
-
-    try:
-        response = httpx.head(url, headers=headers, follow_redirects=True, timeout=10)
-        if response.status_code == 200:
-            content_length = response.headers.get("content-length")
-            if content_length:
-                return int(content_length)
-    except Exception as e:
-        logger.warning(f"Failed to get size for {filename}: {e}")
-    return None
-
-
-def _observe_progress(
-    entry: DownloadEntry,
-    filename: str,
-    expected_size: Optional[int],
-) -> None:
-    """
-    Daemon thread that observes .part file growth and updates entry.percentage.
-    Runs while status == "downloading".
-    """
-    if not expected_size:
-        logger.debug("No expected size; skipping progress observation")
-        return
-
-    cache_dir = MODELS_DIR / ".cache" / "huggingface" / "download"
-
-    while entry.status == "downloading":
-        # Check for .part or .incomplete files
-        for variant in [f"{filename}.part", f"{filename}.incomplete"]:
-            part_path = cache_dir / variant
-            if part_path.exists():
-                try:
-                    current_size = part_path.stat().st_size
-                    percentage = min(99, int((current_size / expected_size) * 100))
-                    if percentage > entry.percentage:
-                        entry.percentage = percentage
-                        logger.debug(f"Progress: {entry.repo_id} {percentage}%")
-                except Exception as e:
-                    logger.debug(f"Error checking progress: {e}")
-                break
-
-        time.sleep(1)
 
 
 def do_download(
@@ -228,8 +165,8 @@ def do_download(
     hf_token: Optional[str],
 ) -> None:
     """
-    Synchronous download function for use with FastAPI BackgroundTasks.
-    Updates entry state as it progresses.
+    Download a GGUF model from HuggingFace with inline progress tracking.
+    Uses httpx streaming so entry.percentage updates in real time.
     """
     entry_id = sanitize_id(repo_id)
     entry = download_store.get(entry_id)
@@ -241,94 +178,100 @@ def do_download(
     try:
         logger.info(f"Download started: {repo_id} ({quantization})")
 
-        # Step 1: Find the GGUF filename
+        # Step 1: Resolve filename
         try:
             filename = _find_gguf_filename(repo_id, quantization)
             entry.filename = filename
             logger.info(f"Target file: {filename}")
         except Exception as e:
-            error_msg = f"Failed to find GGUF file: {str(e)}"
-            logger.error(error_msg)
             entry.status = "failed"
-            entry.error = error_msg
+            entry.error = f"Failed to find GGUF file: {e}"
             return
 
-        # Step 2: Get expected size for progress tracking
-        expected_size = _get_expected_size(repo_id, filename, hf_token)
-        logger.info(f"Expected size: {expected_size} bytes")
-
-        # Step 3: Start progress observer thread
-        entry.status = "downloading"
-        observer_thread = threading.Thread(
-            target=_observe_progress,
-            args=(entry, filename, expected_size),
-            daemon=True,
-        )
-        observer_thread.start()
-
-        # Step 4: Download the file
+        # Step 2: Prepare paths
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = MODELS_DIR / filename
+        temp_path = MODELS_DIR / f"{filename}.incomplete"
+
+        # Step 3: Stream download with live progress
+        entry.status = "downloading"
+        url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+        headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
+        total_size = 0
+
         try:
-            local_path = hf_hub_download(
-                repo_id=repo_id,
-                filename=filename,
-                local_dir=str(MODELS_DIR),
-                token=hf_token,
-                repo_type="model",
-            )
+            with httpx.stream(
+                "GET",
+                url,
+                headers=headers,
+                follow_redirects=True,
+                timeout=httpx.Timeout(connect=30.0, read=None, write=None, pool=None),
+            ) as response:
+                if response.status_code == 404:
+                    entry.status = "failed"
+                    entry.error = f"Model '{repo_id}' not found on HuggingFace"
+                    return
+                if response.status_code in (401, 403):
+                    entry.status = "failed"
+                    entry.error = f"Model '{repo_id}' is gated. Please provide HF_TOKEN with access."
+                    return
+                response.raise_for_status()
+
+                total_size = int(response.headers.get("content-length", 0))
+                logger.info(f"Download size: {total_size} bytes")
+                downloaded = 0
+
+                with open(temp_path, "wb") as f:
+                    for chunk in response.iter_bytes(chunk_size=512 * 1024):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size:
+                            entry.percentage = min(99, int(downloaded / total_size * 100))
+
+            temp_path.rename(output_path)
+            local_path = str(output_path)
             logger.info(f"Downloaded to: {local_path}")
-        except RepositoryNotFoundError:
-            error_msg = f"Model '{repo_id}' not found on HuggingFace"
-            logger.error(error_msg)
+
+        except httpx.HTTPStatusError as e:
+            if temp_path.exists():
+                temp_path.unlink()
             entry.status = "failed"
-            entry.error = error_msg
-            return
-        except GatedRepoError:
-            error_msg = f"Model '{repo_id}' is gated. Please provide HF_TOKEN with access."
-            logger.error(error_msg)
-            entry.status = "failed"
-            entry.error = error_msg
-            return
-        except HfHubHTTPError as e:
-            error_msg = f"HuggingFace API error: {str(e)}"
-            logger.error(error_msg)
-            entry.status = "failed"
-            entry.error = error_msg
+            entry.error = f"HuggingFace API error: HTTP {e.response.status_code}"
+            logger.error(entry.error)
             return
         except Exception as e:
-            error_msg = f"Download failed: {str(e)}"
-            logger.error(error_msg, exc_info=True)
+            if temp_path.exists():
+                temp_path.unlink()
             entry.status = "failed"
-            entry.error = error_msg
+            entry.error = f"Download failed: {e}"
+            logger.error(entry.error, exc_info=True)
             return
 
-        # Step 5: Write verification sidecar
+        # Step 4: Write verification sidecar
         try:
             verified_path = Path(local_path).with_suffix(Path(local_path).suffix + ".verified")
             metadata = {
                 "repo_id": repo_id,
                 "quantization": quantization,
                 "filename": filename,
-                "size": expected_size,
+                "size": total_size or None,
             }
             with open(verified_path, "w") as f:
                 json.dump(metadata, f, indent=2)
             logger.info(f"Wrote verification sidecar: {verified_path}")
         except Exception as e:
-            error_msg = f"Failed to write verification sidecar: {str(e)}"
-            logger.error(error_msg)
             entry.status = "failed"
-            entry.error = error_msg
+            entry.error = f"Failed to write verification sidecar: {e}"
+            logger.error(entry.error)
             return
 
-        # Step 6: Mark as completed
+        # Step 5: Mark completed
         entry.status = "completed"
         entry.percentage = 100
         entry.path = local_path
         logger.info(f"Download completed: {repo_id}")
 
     except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        logger.error(error_msg, exc_info=True)
         entry.status = "failed"
-        entry.error = error_msg
+        entry.error = f"Unexpected error: {e}"
+        logger.error(entry.error, exc_info=True)

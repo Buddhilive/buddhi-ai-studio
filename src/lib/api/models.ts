@@ -8,7 +8,7 @@ export interface ModelInfo {
   model_id?: string;
   name: string;
   quantization: string;
-  status: 'pending' | 'downloading' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'downloading' | 'completed' | 'failed' | 'cancelled' | 'corrupted';
   progress?: number;
   total_size?: number;
   downloaded_size?: number;
