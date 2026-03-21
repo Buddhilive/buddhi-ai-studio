@@ -3,11 +3,11 @@
 import logging
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+import time
 
-from core.database.deps import get_db
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+
 from core.schemas.chat import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -23,7 +23,7 @@ from core.services.inference_service import (
     InferenceRuntimeError,
     InferenceError,
 )
-from core.models.download import ModelDownload
+from core.services.download_service import download_store, sanitize_id
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +42,7 @@ def _error_response(message: str, code: str, http_status: int) -> dict:
 
 
 @router.post("/chat/completions", response_model=None)
-async def create_chat_completion(
-    request: ChatCompletionRequest,
-    db: Session = Depends(get_db),
-):
+async def create_chat_completion(request: ChatCompletionRequest):
     """
     OpenAI-compatible chat completions endpoint.
 
@@ -54,7 +51,6 @@ async def create_chat_completion(
 
     Args:
         request: ChatCompletionRequest matching OpenAI API spec
-        db: Database session
 
     Returns:
         ChatCompletionResponse for non-streaming,
@@ -69,7 +65,7 @@ async def create_chat_completion(
     try:
         if request.stream:
             return StreamingResponse(
-                _stream_generator(request, db),
+                _stream_generator(request),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -77,7 +73,7 @@ async def create_chat_completion(
                 },
             )
         else:
-            return await run_chat_completion(request, db)
+            return await run_chat_completion(request)
 
     except ModelNotFoundError as e:
         logger.error(f"Model not found: {e}")
@@ -120,14 +116,14 @@ async def create_chat_completion(
         raise HTTPException(status_code=500, detail=error)
 
 
-async def _stream_generator(request: ChatCompletionRequest, db: Session):
+async def _stream_generator(request: ChatCompletionRequest):
     """
     Async generator for streaming chat completion chunks.
 
     Yields SSE-formatted strings.
     """
     try:
-        async for chunk in run_chat_completion_stream(request, db):
+        async for chunk in run_chat_completion_stream(request):
             yield chunk
     except ModelNotFoundError as e:
         logger.error(f"Stream error - model not found: {e}")
@@ -161,30 +157,26 @@ async def _stream_generator(request: ChatCompletionRequest, db: Session):
 
 
 @router.get("/models")
-async def list_models(db: Session = Depends(get_db)):
+async def list_models():
     """
     List all available models for inference.
 
     Returns models that have completed downloading in OpenAI API format.
     """
     try:
-        records = (
-            db.query(ModelDownload)
-            .filter(ModelDownload.status == "completed")
-            .order_by(ModelDownload.id.desc())
-            .all()
-        )
+        completed = [e for e in download_store.values() if e.status == "completed"]
 
         models = [
             {
-                "id": record.model_id,
+                "id": entry.repo_id,
                 "object": "model",
                 "owned_by": "local",
+                "created": int(time.time()),
                 "permission": [
                     {
                         "id": "modelperm-123",
                         "object": "model_permission",
-                        "created": int(record.created_at.timestamp()),
+                        "created": int(time.time()),
                         "allow_create_engine": False,
                         "allow_sampling": True,
                         "allow_logprobs": True,
@@ -197,7 +189,7 @@ async def list_models(db: Session = Depends(get_db)):
                     }
                 ],
             }
-            for record in records
+            for entry in completed
         ]
 
         return {"object": "list", "data": models}
@@ -208,7 +200,7 @@ async def list_models(db: Session = Depends(get_db)):
 
 
 @router.get("/models/{model_id:path}")
-async def get_model(model_id: str, db: Session = Depends(get_db)):
+async def get_model(model_id: str):
     """
     Get information for a specific model.
 
@@ -222,30 +214,13 @@ async def get_model(model_id: str, db: Session = Depends(get_db)):
         404: Model not found or not ready
     """
     try:
-        record = (
-            db.query(ModelDownload)
-            .filter(
-                ModelDownload.model_id == model_id,
-                ModelDownload.status == "completed",
-            )
-            .order_by(ModelDownload.id.desc())
-            .first()
+        # Try sanitized lookup first, then by repo_id
+        entry_id = sanitize_id(model_id)
+        entry = download_store.get(entry_id) or next(
+            (e for e in download_store.values() if e.repo_id == model_id), None
         )
 
-        if not record:
-            # Check if it exists but isn't complete
-            any_record = db.query(ModelDownload).filter(ModelDownload.model_id == model_id).first()
-            if any_record:
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "error": {
-                            "message": f"Model '{model_id}' is not ready (status: {any_record.status})",
-                            "type": "invalid_request_error",
-                            "code": "model_not_ready",
-                        }
-                    },
-                )
+        if not entry:
             raise HTTPException(
                 status_code=404,
                 detail={
@@ -257,16 +232,28 @@ async def get_model(model_id: str, db: Session = Depends(get_db)):
                 },
             )
 
+        if entry.status != "completed":
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "message": f"Model '{model_id}' is not ready (status: {entry.status})",
+                        "type": "invalid_request_error",
+                        "code": "model_not_ready",
+                    }
+                },
+            )
+
         model_info = {
-            "id": record.model_id,
+            "id": entry.repo_id,
             "object": "model",
             "owned_by": "local",
-            "created": int(record.created_at.timestamp()),
+            "created": int(time.time()),
             "permission": [
                 {
                     "id": "modelperm-123",
                     "object": "model_permission",
-                    "created": int(record.created_at.timestamp()),
+                    "created": int(time.time()),
                     "allow_create_engine": False,
                     "allow_sampling": True,
                     "allow_logprobs": True,

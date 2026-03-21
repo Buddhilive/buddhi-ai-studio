@@ -1,366 +1,334 @@
-import asyncio
+import json
 import logging
 import os
-import shutil
 import threading
+import time
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from huggingface_hub import hf_hub_download, list_repo_files
 from huggingface_hub.errors import (
     RepositoryNotFoundError,
     GatedRepoError,
     HfHubHTTPError,
 )
-from sqlalchemy.orm import Session
-
-from core.models.download import ModelDownload
-from core.schemas.download import ProgressEvent
 
 logger = logging.getLogger(__name__)
 
-# Global thread pool for downloads
-_download_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hf-download-")
+# Global download store (in-memory)
+download_store: dict[str, "DownloadEntry"] = {}
 
-def shutdown_download_service():
-    """Shutdown the download executor gracefully."""
-    logger.info("Shutting down download service")
-    # Using shutdown(wait=False) + cancel_futures=True is fastest
-    try:
-        _download_executor.shutdown(wait=False, cancel_futures=True)
-    except Exception as e:
-        logger.warning(f"Error during download executor shutdown: {e}")
-    logger.info("Download service shut down")
-
-# Track active downloads: download_id -> DownloadContext
-_active_downloads: dict[int, "DownloadContext"] = {}
-
-
-class DownloadCancelledError(Exception):
-    """Raised when a download is cancelled."""
-
-    pass
+# Models directory
+MODELS_DIR = Path(os.getenv("HF_MODELS_DIR", "./data/models"))
 
 
 @dataclass
-class DownloadContext:
-    """Context for an active download."""
+class DownloadEntry:
+    """State for a single model download."""
 
-    progress_queue: asyncio.Queue
-    cancel_event: threading.Event
-    loop: asyncio.AbstractEventLoop
+    id: str  # sanitized repo_id (e.g., "unsloth_Qwen3.5-0.8B-GGUF")
+    repo_id: str  # original HF repo ID (e.g., "unsloth/Qwen3.5-0.8B-GGUF")
+    name: str  # display name (derived from repo_id)
+    quantization: str  # e.g., "Q4_K_M"
+    status: str  # pending | downloading | completed | failed | corrupted
+    percentage: int  # 0-100
+    path: Optional[str] = None  # absolute path to final .gguf file
+    filename: Optional[str] = None  # just the filename
+    error: Optional[str] = None
 
-
-def get_download_context(download_id: int) -> Optional[DownloadContext]:
-    """Get the context for an active download."""
-    return _active_downloads.get(download_id)
-
-
-def cancel_download(download_id: int, db: Session) -> None:
-    """Cancel an active download."""
-    ctx = _active_downloads.get(download_id)
-    if ctx:
-        ctx.cancel_event.set()
-        # Mark as cancelled in DB (will be updated by the download thread)
-        try:
-            db.query(ModelDownload).filter(ModelDownload.id == download_id).update(
-                {"status": "cancelled"},
-                synchronize_session=False,
-            )
-            db.commit()
-        except Exception as e:
-            logger.error(f"Failed to cancel download: {e}")
-            db.rollback()
+    def to_dict(self) -> dict:
+        """Convert to dict for JSON serialization."""
+        return {
+            "id": self.id,
+            "model_id": self.repo_id,
+            "name": self.name,
+            "quantization": self.quantization,
+            "status": self.status,
+            "progress": self.percentage,
+            "path": self.path,
+            "error": self.error,
+        }
 
 
-def delete_download_files(record: ModelDownload, db: Session) -> None:
-    """Delete local files for a download."""
-    if record.local_path:
-        path = Path(record.local_path)
-        if path.exists():
+def sanitize_id(repo_id: str) -> str:
+    """Convert repo_id to a safe dictionary key."""
+    return repo_id.replace("/", "_")
+
+
+def get_model_path(repo_id: str) -> Optional[str]:
+    """
+    Get the local path to a completed model if it exists and is verified.
+    Returns None if not found, not completed, or .verified sidecar is missing.
+    """
+    entry = download_store.get(sanitize_id(repo_id))
+    if not entry or entry.status != "completed" or not entry.path:
+        return None
+
+    # Verify sidecar exists
+    verified_path = Path(entry.path).with_suffix(Path(entry.path).suffix + ".verified")
+    if not verified_path.exists():
+        logger.warning(f"Model {repo_id} marked completed but .verified sidecar missing: {verified_path}")
+        entry.status = "corrupted"
+        entry.error = "Missing verification sidecar"
+        return None
+
+    return entry.path
+
+
+def scan_models_dir() -> None:
+    """
+    Scan ./models directory at startup.
+    Rebuild download_store from .gguf files and their .verified sidecars.
+    """
+    global download_store
+    download_store.clear()
+
+    if not MODELS_DIR.exists():
+        logger.info(f"Models directory does not exist yet: {MODELS_DIR}")
+        return
+
+    gguf_files = list(MODELS_DIR.glob("*.gguf"))
+    logger.info(f"Found {len(gguf_files)} .gguf files in {MODELS_DIR}")
+
+    for gguf_path in gguf_files:
+        verified_path = gguf_path.with_suffix(gguf_path.suffix + ".verified")
+
+        if verified_path.exists():
             try:
-                shutil.rmtree(path)
-                logger.info(f"Deleted download directory: {path}")
+                with open(verified_path, "r") as f:
+                    metadata = json.load(f)
+                repo_id = metadata.get("repo_id")
+                quantization = metadata.get("quantization", "unknown")
+                filename = metadata.get("filename", gguf_path.name)
+
+                if not repo_id:
+                    logger.warning(f"Invalid .verified file (no repo_id): {verified_path}")
+                    continue
+
+                entry = DownloadEntry(
+                    id=sanitize_id(repo_id),
+                    repo_id=repo_id,
+                    name=repo_id.split("/")[-1],
+                    quantization=quantization,
+                    status="completed",
+                    percentage=100,
+                    path=str(gguf_path),
+                    filename=filename,
+                    error=None,
+                )
+                download_store[entry.id] = entry
+                logger.info(f"Loaded verified model: {repo_id} ({quantization})")
             except Exception as e:
-                logger.error(f"Failed to delete {path}: {e}")
-                record.error_msg = f"Failed to delete files: {str(e)}"
-                db.commit()
-                return
+                logger.error(f"Failed to load .verified file {verified_path}: {e}")
+        else:
+            # .gguf exists but no .verified sidecar
+            logger.warning(f"Found orphaned .gguf file (no .verified sidecar): {gguf_path}")
+            # Try to infer repo_id from filename
+            filename_base = gguf_path.stem
+            entry = DownloadEntry(
+                id=sanitize_id(filename_base),
+                repo_id=filename_base,
+                name=filename_base,
+                quantization="unknown",
+                status="corrupted",
+                percentage=0,
+                path=str(gguf_path),
+                filename=gguf_path.name,
+                error="Missing verification sidecar; file may be incomplete",
+            )
+            download_store[entry.id] = entry
 
-    record.local_path = None
-    db.commit()
 
-
-async def start_download(model_id: str, quantization: Optional[str], db: Session) -> ModelDownload:
+def _find_gguf_filename(repo_id: str, quantization: str) -> str:
     """
-    Start a new model download.
-
-    Validates that:
-    - model_id is not empty
-    - no other download is currently active for the same model+quantization
+    List files in HF repo and find the best .gguf match.
+    Prefer filename matching the quantization string (case-insensitive).
+    Falls back to first .gguf if no quantization match.
     """
-    # Validate input
-    if not model_id or not model_id.strip():
-        raise ValueError("model_id cannot be empty")
-
-    model_id = model_id.strip()
-
-    # Check for duplicate active download
-    existing = (
-        db.query(ModelDownload)
-        .filter(
-            ModelDownload.model_id == model_id,
-            ModelDownload.quantization == quantization,
-            ModelDownload.status == "downloading",
-        )
-        .first()
-    )
-    if existing:
-        raise ValueError(f"Download already in progress for {model_id} (quantization: {quantization})")
-
-    # Create download record
-    download_record = ModelDownload(
-        model_id=model_id,
-        quantization=quantization,
-        status="pending",
-        progress=0.0,
-    )
-    db.add(download_record)
-    db.commit()
-    db.refresh(download_record)
-    # Setup download context
-    loop = asyncio.get_event_loop()
-    ctx = DownloadContext(
-        progress_queue=asyncio.Queue(),
-        cancel_event=threading.Event(),
-        loop=loop,
-    )
-    _active_downloads[download_record.id] = ctx
-
-    # Start download in background thread
-    def run_download():
-        _run_download_thread(
-            download_record.id,
-            model_id,
-            quantization,
-            ctx,
-        )
-
-    _download_executor.submit(run_download)
-
-    return download_record
-
-
-def _update_download_status(download_id: int, status: str, **kwargs) -> bool:
-    """Safely update download status in DB."""
-    from core.database.engine import engine
-    from sqlalchemy.orm import sessionmaker
-
-    # Create a fresh session factory to avoid closed transaction issues
-    FreshSession = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-    db = FreshSession()
     try:
-        logger.debug(f"Updating download {download_id} to status={status}, kwargs={kwargs}")
-        db.query(ModelDownload).filter(ModelDownload.id == download_id).update(
-            {"status": status, **kwargs},
-            synchronize_session=False,
-        )
-        db.commit()
-        logger.debug(f"Successfully updated download {download_id}")
-        return True
+        files = list(list_repo_files(repo_id=repo_id, repo_type="model"))
+        gguf_files = [f for f in files if f.endswith(".gguf")]
+
+        if not gguf_files:
+            raise ValueError(f"No .gguf files found in {repo_id}")
+
+        # Try to match quantization (case-insensitive)
+        quantization_lower = quantization.lower()
+        for filename in gguf_files:
+            if quantization_lower in filename.lower():
+                logger.info(f"Found {quantization} match: {filename}")
+                return filename
+
+        # Fallback: use first .gguf
+        logger.warning(f"No {quantization} match found; using first .gguf: {gguf_files[0]}")
+        return gguf_files[0]
     except Exception as e:
-        logger.error(f"Failed to update download {download_id} status to {status}: {e}", exc_info=True)
-        try:
-            db.rollback()
-        except:
-            pass
-        return False
-    finally:
-        try:
-            db.close()
-        except:
-            pass
+        logger.error(f"Failed to list files for {repo_id}: {e}")
+        raise
 
 
-def _push_event(ctx: DownloadContext, event: ProgressEvent) -> None:
-    """Push an event to the SSE queue from a thread."""
+def _get_expected_size(repo_id: str, filename: str, hf_token: Optional[str]) -> Optional[int]:
+    """
+    Get the Content-Length of a file from HuggingFace without downloading.
+    """
+    url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+    headers = {}
+    if hf_token:
+        headers["Authorization"] = f"Bearer {hf_token}"
+
     try:
-        ctx.loop.call_soon_threadsafe(ctx.progress_queue.put_nowait, event)
-    except Exception:
-        pass
+        response = httpx.head(url, headers=headers, follow_redirects=True, timeout=10)
+        if response.status_code == 200:
+            content_length = response.headers.get("content-length")
+            if content_length:
+                return int(content_length)
+    except Exception as e:
+        logger.warning(f"Failed to get size for {filename}: {e}")
+    return None
 
 
-def _run_download_thread(
-    download_id: int,
-    model_id: str,
-    _: Optional[str],
-    ctx: DownloadContext,
+def _observe_progress(
+    entry: DownloadEntry,
+    filename: str,
+    expected_size: Optional[int],
 ) -> None:
-    """Run the actual download in a thread."""
-    logger.info(f"Download thread started for {download_id}: {model_id}")
+    """
+    Daemon thread that observes .part file growth and updates entry.percentage.
+    Runs while status == "downloading".
+    """
+    if not expected_size:
+        logger.debug("No expected size; skipping progress observation")
+        return
+
+    cache_dir = MODELS_DIR / ".cache" / "huggingface" / "download"
+
+    while entry.status == "downloading":
+        # Check for .part or .incomplete files
+        for variant in [f"{filename}.part", f"{filename}.incomplete"]:
+            part_path = cache_dir / variant
+            if part_path.exists():
+                try:
+                    current_size = part_path.stat().st_size
+                    percentage = min(99, int((current_size / expected_size) * 100))
+                    if percentage > entry.percentage:
+                        entry.percentage = percentage
+                        logger.debug(f"Progress: {entry.repo_id} {percentage}%")
+                except Exception as e:
+                    logger.debug(f"Error checking progress: {e}")
+                break
+
+        time.sleep(1)
+
+
+def do_download(
+    repo_id: str,
+    quantization: str,
+    hf_token: Optional[str],
+) -> None:
+    """
+    Synchronous download function for use with FastAPI BackgroundTasks.
+    Updates entry state as it progresses.
+    """
+    entry_id = sanitize_id(repo_id)
+    entry = download_store.get(entry_id)
+
+    if not entry:
+        logger.error(f"Download entry not found for {repo_id}")
+        return
+
     try:
-        # Get settings from environment
-        hf_models_dir = os.getenv("HF_MODELS_DIR", "./data/models")
-        hf_token = os.getenv("HF_TOKEN") or None
-        logger.info(f"Environment: models_dir={hf_models_dir}, has_token={bool(hf_token)}")
+        logger.info(f"Download started: {repo_id} ({quantization})")
 
-        # Prepare local directory
-        local_dir = Path(hf_models_dir) / model_id.replace("/", "_")
-        local_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Local directory prepared: {local_dir}")
-
-        # Update status to downloading
-        logger.info(f"Calling _update_download_status for {download_id}")
-        if not _update_download_status(download_id, "downloading"):
-            logger.warning(f"Failed to update status for {download_id}")
-            return
-        logger.info(f"Successfully updated {download_id} to downloading")
-
-        # Get list of files
+        # Step 1: Find the GGUF filename
         try:
-            logger.info(f"Fetching file list for {model_id}")
-            files = list(list_repo_files(
-                repo_id=model_id,
+            filename = _find_gguf_filename(repo_id, quantization)
+            entry.filename = filename
+            logger.info(f"Target file: {filename}")
+        except Exception as e:
+            error_msg = f"Failed to find GGUF file: {str(e)}"
+            logger.error(error_msg)
+            entry.status = "failed"
+            entry.error = error_msg
+            return
+
+        # Step 2: Get expected size for progress tracking
+        expected_size = _get_expected_size(repo_id, filename, hf_token)
+        logger.info(f"Expected size: {expected_size} bytes")
+
+        # Step 3: Start progress observer thread
+        entry.status = "downloading"
+        observer_thread = threading.Thread(
+            target=_observe_progress,
+            args=(entry, filename, expected_size),
+            daemon=True,
+        )
+        observer_thread.start()
+
+        # Step 4: Download the file
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            local_path = hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+                local_dir=str(MODELS_DIR),
                 token=hf_token,
                 repo_type="model",
-            ))
-            logger.info(f"Found {len(files)} files for {model_id}")
+            )
+            logger.info(f"Downloaded to: {local_path}")
         except RepositoryNotFoundError:
-            error = f"Model '{model_id}' not found on HuggingFace"
-            logger.error(error)
-            _update_download_status(download_id, "failed", error_msg=error)
-            _push_event(ctx, ProgressEvent(
-                download_id=download_id,
-                status="failed",
-                progress=0.0,
-                message=error,
-            ))
+            error_msg = f"Model '{repo_id}' not found on HuggingFace"
+            logger.error(error_msg)
+            entry.status = "failed"
+            entry.error = error_msg
             return
         except GatedRepoError:
-            error = f"Model '{model_id}' is gated. Please provide HF_TOKEN with access."
-            logger.error(error)
-            _update_download_status(download_id, "failed", error_msg=error)
-            _push_event(ctx, ProgressEvent(
-                download_id=download_id,
-                status="failed",
-                progress=0.0,
-                message=error,
-            ))
+            error_msg = f"Model '{repo_id}' is gated. Please provide HF_TOKEN with access."
+            logger.error(error_msg)
+            entry.status = "failed"
+            entry.error = error_msg
             return
         except HfHubHTTPError as e:
-            error = f"HuggingFace API error: {str(e)}"
-            logger.error(error)
-            _update_download_status(download_id, "failed", error_msg=error)
-            _push_event(ctx, ProgressEvent(
-                download_id=download_id,
-                status="failed",
-                progress=0.0,
-                message=error,
-            ))
+            error_msg = f"HuggingFace API error: {str(e)}"
+            logger.error(error_msg)
+            entry.status = "failed"
+            entry.error = error_msg
             return
         except Exception as e:
-            error = f"Failed to fetch file list: {str(e)}"
-            logger.error(error, exc_info=True)
-            _update_download_status(download_id, "failed", error_msg=error)
-            _push_event(ctx, ProgressEvent(
-                download_id=download_id,
-                status="failed",
-                progress=0.0,
-                message=error,
-            ))
+            error_msg = f"Download failed: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            entry.status = "failed"
+            entry.error = error_msg
             return
 
-        # Download files one by one
-        total_files = len(files)
-        last_progress_update = 0.0  # Track last reported progress to update only at 20% intervals
-        for i, filename in enumerate(files):
-            if ctx.cancel_event.is_set():
-                error = "Download cancelled by user"
-                logger.info(f"Download {download_id} cancelled")
-                progress = ((i + 1) / total_files * 100) if total_files > 0 else 0.0
-                _update_download_status(
-                    download_id,
-                    "cancelled",
-                    error_msg=error,
-                )
-                _push_event(ctx, ProgressEvent(
-                    download_id=download_id,
-                    status="cancelled",
-                    progress=progress,
-                    message=error,
-                ))
-                # Cleanup
-                if local_dir.exists():
-                    try:
-                        shutil.rmtree(local_dir)
-                    except Exception as e:
-                        logger.error(f"Failed to cleanup: {e}")
-                return
+        # Step 5: Write verification sidecar
+        try:
+            verified_path = Path(local_path).with_suffix(Path(local_path).suffix + ".verified")
+            metadata = {
+                "repo_id": repo_id,
+                "quantization": quantization,
+                "filename": filename,
+                "size": expected_size,
+            }
+            with open(verified_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+            logger.info(f"Wrote verification sidecar: {verified_path}")
+        except Exception as e:
+            error_msg = f"Failed to write verification sidecar: {str(e)}"
+            logger.error(error_msg)
+            entry.status = "failed"
+            entry.error = error_msg
+            return
 
-            try:
-                logger.debug(f"Downloading {filename} ({i+1}/{total_files})")
-                hf_hub_download(
-                    repo_id=model_id,
-                    filename=filename,
-                    local_dir=str(local_dir),
-                    token=hf_token,
-                    repo_type="model",
-                )
-            except Exception as e:
-                error = f"Failed to download {filename}: {str(e)}"
-                logger.error(error, exc_info=True)
-                progress = ((i + 1) / total_files * 100) if total_files > 0 else 0.0
-                _update_download_status(download_id, "failed", error_msg=error)
-                _push_event(ctx, ProgressEvent(
-                    download_id=download_id,
-                    status="failed",
-                    progress=progress,
-                    message=error,
-                ))
-                return
-
-            # Send progress event via SSE (no DB update during download)
-            progress = ((i + 1) / total_files) * 100
-            if progress - last_progress_update >= 20.0 or i == total_files - 1:
-                last_progress_update = progress
-                event = ProgressEvent(
-                    download_id=download_id,
-                    status="downloading",
-                    progress=progress,
-                    message=f"Downloaded {i + 1}/{total_files} files",
-                )
-                _push_event(ctx, event)
-
-        # Mark as completed
-        _update_download_status(
-            download_id,
-            "completed",
-            progress=100.0,
-            local_path=str(local_dir),
-        )
-        logger.info(f"Download {download_id} completed: {model_id}")
-
-        # Send completion event
-        event = ProgressEvent(
-            download_id=download_id,
-            status="completed",
-            progress=100.0,
-            message="Download completed successfully",
-        )
-        _push_event(ctx, event)
+        # Step 6: Mark as completed
+        entry.status = "completed"
+        entry.percentage = 100
+        entry.path = local_path
+        logger.info(f"Download completed: {repo_id}")
 
     except Exception as e:
-        logger.error(f"Unexpected error in download thread: {e}", exc_info=True)
         error_msg = f"Unexpected error: {str(e)}"
-        _update_download_status(download_id, "failed", error_msg=error_msg)
-        _push_event(ctx, ProgressEvent(
-            download_id=download_id,
-            status="failed",
-            progress=0.0,
-            message=error_msg,
-        ))
-    finally:
-        # Cleanup context
-        _active_downloads.pop(download_id, None)
+        logger.error(error_msg, exc_info=True)
+        entry.status = "failed"
+        entry.error = error_msg

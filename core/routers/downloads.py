@@ -1,91 +1,110 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
-from core.database.deps import get_db
-from core.schemas.download import DownloadRequest, DownloadRecord, ProgressEvent
-from core.models.download import ModelDownload
-from core.services.download_service import start_download, get_download_context, cancel_download, delete_download_files
+import asyncio
+import json
 import logging
+import os
+from pathlib import Path
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi.responses import StreamingResponse
+
+from core.schemas.download import DownloadRequest, ModelRecord
+from core.services.download_service import DownloadEntry, download_store, do_download, sanitize_id
 
 router = APIRouter(prefix="/models", tags=["models"])
 logger = logging.getLogger(__name__)
 
 
-@router.post("/download", status_code=status.HTTP_202_ACCEPTED, response_model=DownloadRecord)
+@router.post("/download", status_code=status.HTTP_202_ACCEPTED, response_model=ModelRecord)
 async def request_model_download(
     request: DownloadRequest,
-    db: Session = Depends(get_db),
-) -> DownloadRecord:
+    background_tasks: BackgroundTasks,
+) -> ModelRecord:
     """
     Start a new model download from HuggingFace.
 
     Returns 202 Accepted if the download is queued successfully.
-    Returns 409 Conflict if the same model+quantization is already downloading.
-    Returns 400 Bad Request if the model ID is invalid or not found on HuggingFace.
+    Returns 409 Conflict if a download for this model is already pending or downloading.
     """
-    download_record = await start_download(request.model_id, request.quantization, db)
-    return DownloadRecord.from_orm(download_record)
+    entry_id = sanitize_id(request.model_id)
+
+    # Check for existing active download
+    existing = download_store.get(entry_id)
+    if existing and existing.status in ("pending", "downloading"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Download already in progress for {request.model_id}",
+        )
+
+    # Create new entry
+    entry = DownloadEntry(
+        id=entry_id,
+        repo_id=request.model_id,
+        name=request.model_id.split("/")[-1] if "/" in request.model_id else request.model_id,
+        quantization=request.quantization,
+        status="pending",
+        percentage=0,
+        path=None,
+        filename=None,
+        error=None,
+    )
+    download_store[entry_id] = entry
+
+    # Add background task
+    hf_token = os.getenv("HF_TOKEN")
+    background_tasks.add_task(do_download, request.model_id, request.quantization, hf_token)
+
+    logger.info(f"Download queued: {request.model_id} ({request.quantization})")
+    return ModelRecord(**entry.to_dict())
 
 
-@router.get("")
-async def list_downloads(db: Session = Depends(get_db)) -> list[DownloadRecord]:
+@router.get("", response_model=list[ModelRecord])
+async def list_downloads() -> list[ModelRecord]:
     """List all model downloads."""
-    records = db.query(ModelDownload).all()
-    return [DownloadRecord.from_orm(r) for r in records]
+    return [ModelRecord(**entry.to_dict()) for entry in download_store.values()]
 
 
-@router.get("/{download_id}", response_model=DownloadRecord)
-async def get_download(
-    download_id: int,
-    db: Session = Depends(get_db),
-) -> DownloadRecord:
-    """Get a specific download record by ID."""
-    record = db.query(ModelDownload).filter(ModelDownload.id == download_id).first()
-    if not record:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Download not found")
-    return DownloadRecord.from_orm(record)
+@router.get("/{model_id:path}", response_model=ModelRecord)
+async def get_download(model_id: str) -> ModelRecord:
+    """Get a specific download record by model ID (sanitized repo ID)."""
+    # Normalize the model_id in case it comes with slashes
+    normalized_id = model_id.replace("/", "_")
+    entry = download_store.get(normalized_id)
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+    return ModelRecord(**entry.to_dict())
 
 
-@router.get("/{download_id}/progress")
-async def stream_download_progress(download_id: int, db: Session = Depends(get_db)):
+@router.get("/{model_id:path}/progress")
+async def stream_download_progress(model_id: str):
     """
     Stream download progress via Server-Sent Events (SSE).
+    Polls the in-memory download_store every 1 second.
 
-    Only works when the download is in 'downloading' status.
-    Returns 404 if the download record doesn't exist.
-    Returns 409 if the download is not currently active.
+    The model_id should be the sanitized form (repo_id with / replaced by _).
     """
-    record = db.query(ModelDownload).filter(ModelDownload.id == download_id).first()
-    if not record:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Download not found")
-
-    if record.status != "downloading":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Download is not active (status: {record.status})",
-        )
-
-    ctx = get_download_context(download_id)
-    if not ctx:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Download context not found; download may have completed",
-        )
 
     async def event_stream():
         """Generate SSE events for download progress."""
         try:
+            # Normalize the model_id in case it comes with slashes
+            normalized_id = model_id.replace("/", "_")
+
             while True:
-                try:
-                    event = await ctx.progress_queue.get()
-                except Exception as e:
-                    logger.error(f"Error getting progress event: {e}")
+                entry = download_store.get(normalized_id)
+                if not entry:
+                    logger.debug(f"Model {normalized_id} not found in download_store (got: {model_id})")
                     break
 
-                yield f"data: {event.model_dump_json()}\n\n"
+                # Yield current state
+                data = entry.to_dict()
+                yield f"data: {json.dumps(data)}\n\n"
 
-                if event.status in ("completed", "failed", "cancelled"):
+                # Stop if terminal state
+                if entry.status in ("completed", "failed", "corrupted"):
                     break
+
+                # Poll interval
+                await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"SSE stream error: {e}")
             raise
@@ -101,53 +120,37 @@ async def stream_download_progress(download_id: int, db: Session = Depends(get_d
     )
 
 
-@router.delete("/{download_id}", response_model=DownloadRecord)
-async def cancel_or_delete_download(
-    download_id: int,
-    db: Session = Depends(get_db),
-) -> DownloadRecord:
+@router.delete("/{model_id:path}", response_model=ModelRecord)
+async def cancel_or_delete_download(model_id: str) -> ModelRecord:
     """
-    Cancel an active download or delete a completed record.
-
-    - If status is 'downloading': cancel the download
-    - If status is completed/failed/cancelled: delete the record
-    - Local files are NOT deleted (use DELETE /models/{id}/files for that)
+    Cancel a pending/downloading download or delete a completed entry.
+    Also deletes the local .gguf and .verified files if they exist.
     """
-    record = db.query(ModelDownload).filter(ModelDownload.id == download_id).first()
-    if not record:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Download not found")
+    # Normalize the model_id in case it comes with slashes
+    normalized_id = model_id.replace("/", "_")
+    entry = download_store.get(normalized_id)
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
 
-    if record.status == "downloading":
-        cancel_download(download_id, db)
-        db.refresh(record)
-        return DownloadRecord.from_orm(record)
-    else:
-        # Delete the record but keep local files
-        record_data = DownloadRecord.from_orm(record)
-        db.delete(record)
-        db.commit()
-        return record_data
+    record = ModelRecord(**entry.to_dict())
 
+    # Delete local files if they exist
+    if entry.path:
+        try:
+            gguf_path = Path(entry.path)
+            if gguf_path.exists():
+                gguf_path.unlink()
+                logger.info(f"Deleted {gguf_path}")
 
-@router.delete("/{download_id}/files", response_model=DownloadRecord)
-async def delete_model_files(
-    download_id: int,
-    db: Session = Depends(get_db),
-) -> DownloadRecord:
-    """
-    Delete downloaded model files (keep the record).
+            verified_path = gguf_path.with_suffix(gguf_path.suffix + ".verified")
+            if verified_path.exists():
+                verified_path.unlink()
+                logger.info(f"Deleted {verified_path}")
+        except Exception as e:
+            logger.error(f"Failed to delete files for {model_id}: {e}")
 
-    Returns 409 if the download is still in progress.
-    """
-    record = db.query(ModelDownload).filter(ModelDownload.id == download_id).first()
-    if not record:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Download not found")
+    # Remove from store
+    del download_store[normalized_id]
+    logger.info(f"Removed download entry: {model_id}")
 
-    if record.status == "downloading":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Cannot delete files while download is in progress",
-        )
-
-    delete_download_files(record, db)
-    return DownloadRecord.from_orm(record)
+    return record

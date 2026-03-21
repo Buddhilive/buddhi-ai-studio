@@ -6,10 +6,9 @@ import uuid
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-from sqlalchemy.orm import Session
 from llama_cpp import Llama
 
-from core.models.download import ModelDownload
+from core.services.download_service import download_store, sanitize_id
 from core.schemas.chat import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -76,40 +75,34 @@ class InferenceRuntimeError(InferenceError):
 
 # ===== Helper Functions =====
 
-def resolve_model_record(model_id: str, db: Session) -> ModelDownload:
+def resolve_model_entry(model_id: str):
     """
-    Look up the most recent completed download for model_id.
+    Look up a completed model in the download store.
 
     Args:
-        model_id: HuggingFace model ID (e.g., "bartowski/Llama-3.2-1B-Instruct-GGUF")
-        db: Database session
+        model_id: HuggingFace model ID (e.g., "unsloth/Qwen3.5-0.8B-GGUF")
 
     Returns:
-        ModelDownload record with status="completed"
+        DownloadEntry with status="completed"
 
     Raises:
-        ModelNotFoundError: No record found
-        ModelNotReadyError: Record found but status != "completed"
+        ModelNotFoundError: No entry found
+        ModelNotReadyError: Entry found but status != "completed"
     """
-    record = (
-        db.query(ModelDownload)
-        .filter(
-            ModelDownload.model_id == model_id,
-            ModelDownload.status == "completed",
-        )
-        .order_by(ModelDownload.id.desc())
-        .first()
-    )
+    # Try sanitized lookup first
+    entry_id = sanitize_id(model_id)
+    entry = download_store.get(entry_id)
 
-    if record:
-        return record
+    if not entry:
+        # Try by repo_id in case we're using a different format
+        entry = next((e for e in download_store.values() if e.repo_id == model_id), None)
+        if not entry:
+            raise ModelNotFoundError(f"Model '{model_id}' not found in downloads")
 
-    # Check if any record exists for this model
-    any_record = db.query(ModelDownload).filter(ModelDownload.model_id == model_id).first()
-    if any_record:
-        raise ModelNotReadyError(model_id, any_record.status)
+    if entry.status != "completed":
+        raise ModelNotReadyError(model_id, entry.status)
 
-    raise ModelNotFoundError(f"Model '{model_id}' not found in downloads")
+    return entry
 
 
 def resolve_gguf_path(local_path: str, quantization: str | None) -> Path:
@@ -291,13 +284,12 @@ def build_llama_kwargs(request: ChatCompletionRequest, tools_list: list[dict] | 
     return kwargs
 
 
-async def run_chat_completion(request: ChatCompletionRequest, db: Session) -> ChatCompletionResponse:
+async def run_chat_completion(request: ChatCompletionRequest) -> ChatCompletionResponse:
     """
     Run a non-streaming chat completion.
 
     Args:
         request: ChatCompletionRequest
-        db: Database session
 
     Returns:
         ChatCompletionResponse
@@ -311,8 +303,10 @@ async def run_chat_completion(request: ChatCompletionRequest, db: Session) -> Ch
 
     # Resolve model
     try:
-        record = resolve_model_record(request.model, db)
-        gguf_path = resolve_gguf_path(record.local_path, record.quantization)
+        entry = resolve_model_entry(request.model)
+        # entry.path is the exact path to the .gguf file
+        if not entry.path:
+            raise ModelNotFoundError(f"Model '{request.model}' has no local path")
     except InferenceError:
         raise
     except Exception as e:
@@ -356,8 +350,8 @@ async def run_chat_completion(request: ChatCompletionRequest, db: Session) -> Ch
 
         async with cache.acquire(
             model_id=request.model,
-            quantization=record.quantization,
-            gguf_path=gguf_path,
+            quantization=entry.quantization,
+            gguf_path=Path(entry.path),
             n_ctx=settings.inference_n_ctx,
             n_gpu_layers=settings.inference_n_gpu_layers,
             n_threads=settings.inference_n_threads,
@@ -443,7 +437,7 @@ async def run_chat_completion(request: ChatCompletionRequest, db: Session) -> Ch
 
 
 async def run_chat_completion_stream(
-    request: ChatCompletionRequest, db: Session
+    request: ChatCompletionRequest,
 ) -> AsyncGenerator[str, None]:
     """
     Run a streaming chat completion.
@@ -452,7 +446,6 @@ async def run_chat_completion_stream(
 
     Args:
         request: ChatCompletionRequest
-        db: Database session
 
     Yields:
         SSE data strings (e.g., "data: {...}\n\n")
@@ -464,8 +457,9 @@ async def run_chat_completion_stream(
 
     # Resolve model
     try:
-        record = resolve_model_record(request.model, db)
-        gguf_path = resolve_gguf_path(record.local_path, record.quantization)
+        entry = resolve_model_entry(request.model)
+        if not entry.path:
+            raise ModelNotFoundError(f"Model '{request.model}' has no local path")
     except InferenceError:
         raise
     except Exception as e:
@@ -505,8 +499,8 @@ async def run_chat_completion_stream(
 
             async with cache.acquire(
                 model_id=request.model,
-                quantization=record.quantization,
-                gguf_path=gguf_path,
+                quantization=entry.quantization,
+                gguf_path=Path(entry.path),
                 n_ctx=settings.inference_n_ctx,
                 n_gpu_layers=settings.inference_n_gpu_layers,
                 n_threads=settings.inference_n_threads,

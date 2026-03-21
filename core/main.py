@@ -9,11 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 print("--- [DIAGNOSTIC] core.main is being imported ---", file=sys.stderr, flush=True)
 
 from core.database.engine import create_db_tables
-# ... (imports remain the same)
-from core.models.download import ModelDownload
 from core.routers.downloads import router as downloads_router
 from core.routers.chat import router as chat_router
-from core.database.engine import SessionLocal
 
 # Configure a basic handler if none exists to ensure core logs appear
 if not logging.getLogger().handlers:
@@ -28,26 +25,10 @@ async def lifespan(_: FastAPI):
     print("--- [DIAGNOSTIC] lifespan startup beginning ---", file=sys.stderr, flush=True)
     # Startup
     try:
-        create_db_tables()
-        logger.info("Database tables created")
-        # ... rest of lifespan code
-
-        # Mark any stale "downloading" records as "failed" on restart
-        db = SessionLocal()
-        try:
-            stale_downloads = db.query(ModelDownload).filter(
-                ModelDownload.status == "downloading"
-            ).all()
-            for download in stale_downloads:
-                download.status = "failed"
-                download.error_msg = "Server restarted during download"
-            db.commit()
-            if stale_downloads:
-                logger.warning(
-                    f"Marked {len(stale_downloads)} stale downloads as failed"
-                )
-        finally:
-            db.close()
+        # Scan local models directory and populate download_store
+        from core.services.download_service import scan_models_dir
+        scan_models_dir()
+        logger.info("Download store initialized from disk")
 
         # Initialize model cache for inference
         from core.services.model_cache import init_model_cache
@@ -63,9 +44,7 @@ async def lifespan(_: FastAPI):
 
     # Shutdown
     from core.services.model_cache import shutdown_model_cache
-    from core.services.download_service import shutdown_download_service
     shutdown_model_cache()
-    shutdown_download_service()
     logger.info("Application shutting down")
 
 
