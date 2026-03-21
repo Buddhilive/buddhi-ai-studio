@@ -63,15 +63,8 @@ async def list_downloads() -> list[ModelRecord]:
     return [ModelRecord(**entry.to_dict()) for entry in download_store.values()]
 
 
-@router.get("/{model_id:path}", response_model=ModelRecord)
-async def get_download(model_id: str) -> ModelRecord:
-    """Get a specific download record by model ID (sanitized repo ID)."""
-    # Normalize the model_id in case it comes with slashes
-    normalized_id = model_id.replace("/", "_")
-    entry = download_store.get(normalized_id)
-    if not entry:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
-    return ModelRecord(**entry.to_dict())
+# IMPORTANT: More specific routes MUST come before the catch-all /{model_id:path} route
+# Otherwise GET /download will match /{model_id:path} with model_id="download"
 
 
 @router.get("/{model_id:path}/progress")
@@ -118,6 +111,17 @@ async def stream_download_progress(model_id: str):
             "Connection": "keep-alive",
         },
     )
+
+
+@router.get("/{model_id:path}", response_model=ModelRecord)
+async def get_download(model_id: str) -> ModelRecord:
+    """Get a specific download record by model ID (sanitized repo ID)."""
+    # Normalize the model_id in case it comes with slashes
+    normalized_id = model_id.replace("/", "_")
+    entry = download_store.get(normalized_id)
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
+    return ModelRecord(**entry.to_dict())
 
 
 @router.delete("/{model_id:path}", response_model=ModelRecord)
