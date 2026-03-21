@@ -58,25 +58,11 @@ const data = {
     },
     {
       title: "Models",
-      url: "#",
+      url: "/models",
       icon: (
         <BotIcon
         />
       ),
-      items: [
-        {
-          title: "Genesis",
-          url: "#",
-        },
-        {
-          title: "Explorer",
-          url: "#",
-        },
-        {
-          title: "Quantum",
-          url: "#",
-        },
-      ],
     },
     {
       title: "Documentation",

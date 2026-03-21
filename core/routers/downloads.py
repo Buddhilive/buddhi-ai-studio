@@ -119,13 +119,14 @@ async def cancel_or_delete_download(
 
     if record.status == "downloading":
         cancel_download(download_id, db)
+        db.refresh(record)
+        return DownloadRecord.from_orm(record)
     else:
         # Delete the record but keep local files
+        record_data = DownloadRecord.from_orm(record)
         db.delete(record)
         db.commit()
-
-    db.refresh(record)
-    return DownloadRecord.from_orm(record)
+        return record_data
 
 
 @router.delete("/{download_id}/files", response_model=DownloadRecord)

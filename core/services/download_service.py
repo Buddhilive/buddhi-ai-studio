@@ -172,6 +172,14 @@ def _update_download_status(download_id: int, status: str, **kwargs) -> bool:
             pass
 
 
+def _push_event(ctx: DownloadContext, event: ProgressEvent) -> None:
+    """Push an event to the SSE queue from a thread."""
+    try:
+        ctx.loop.call_soon_threadsafe(ctx.progress_queue.put_nowait, event)
+    except Exception:
+        pass
+
+
 def _run_download_thread(
     download_id: int,
     model_id: str,
@@ -211,21 +219,45 @@ def _run_download_thread(
             error = f"Model '{model_id}' not found on HuggingFace"
             logger.error(error)
             _update_download_status(download_id, "failed", error_msg=error)
+            _push_event(ctx, ProgressEvent(
+                download_id=download_id,
+                status="failed",
+                progress=0.0,
+                message=error,
+            ))
             return
         except GatedRepoError:
             error = f"Model '{model_id}' is gated. Please provide HF_TOKEN with access."
             logger.error(error)
             _update_download_status(download_id, "failed", error_msg=error)
+            _push_event(ctx, ProgressEvent(
+                download_id=download_id,
+                status="failed",
+                progress=0.0,
+                message=error,
+            ))
             return
         except HfHubHTTPError as e:
             error = f"HuggingFace API error: {str(e)}"
             logger.error(error)
             _update_download_status(download_id, "failed", error_msg=error)
+            _push_event(ctx, ProgressEvent(
+                download_id=download_id,
+                status="failed",
+                progress=0.0,
+                message=error,
+            ))
             return
         except Exception as e:
             error = f"Failed to fetch file list: {str(e)}"
             logger.error(error, exc_info=True)
             _update_download_status(download_id, "failed", error_msg=error)
+            _push_event(ctx, ProgressEvent(
+                download_id=download_id,
+                status="failed",
+                progress=0.0,
+                message=error,
+            ))
             return
 
         # Download files one by one
@@ -234,11 +266,18 @@ def _run_download_thread(
             if ctx.cancel_event.is_set():
                 error = "Download cancelled by user"
                 logger.info(f"Download {download_id} cancelled")
+                progress = ((i + 1) / total_files * 100) if total_files > 0 else 0.0
                 _update_download_status(
                     download_id,
                     "cancelled",
                     error_msg=error,
                 )
+                _push_event(ctx, ProgressEvent(
+                    download_id=download_id,
+                    status="cancelled",
+                    progress=progress,
+                    message=error,
+                ))
                 # Cleanup
                 if local_dir.exists():
                     try:
@@ -259,7 +298,14 @@ def _run_download_thread(
             except Exception as e:
                 error = f"Failed to download {filename}: {str(e)}"
                 logger.error(error, exc_info=True)
+                progress = ((i + 1) / total_files * 100) if total_files > 0 else 0.0
                 _update_download_status(download_id, "failed", error_msg=error)
+                _push_event(ctx, ProgressEvent(
+                    download_id=download_id,
+                    status="failed",
+                    progress=progress,
+                    message=error,
+                ))
                 return
 
             # Update progress
@@ -301,7 +347,14 @@ def _run_download_thread(
 
     except Exception as e:
         logger.error(f"Unexpected error in download thread: {e}", exc_info=True)
-        _update_download_status(download_id, "failed", error_msg=f"Unexpected error: {str(e)}")
+        error_msg = f"Unexpected error: {str(e)}"
+        _update_download_status(download_id, "failed", error_msg=error_msg)
+        _push_event(ctx, ProgressEvent(
+            download_id=download_id,
+            status="failed",
+            progress=0.0,
+            message=error_msg,
+        ))
     finally:
         # Cleanup context
         _active_downloads.pop(download_id, None)
