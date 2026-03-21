@@ -51,9 +51,9 @@ export function ModelsView() {
     setModels(prev => prev.filter(m => m.id !== id));
   };
   
-  const updateModelStatus = (id: string, updates: Partial<ModelInfo>) => {
+  const updateModelStatus = useCallback((id: string, updates: Partial<ModelInfo>) => {
       setModels(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
-  };
+  }, []);
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -207,9 +207,26 @@ function ModelTableRow({ model, onRemove, onUpdate }: { model: ModelInfo; onRemo
   const [localProgress, setLocalProgress] = useState(model.progress || 0);
   const [localStatus, setLocalStatus] = useState(model.status);
 
+  // Keep a stable ref to onUpdate so it doesn't retrigger the SSE effect
+  const onUpdateRef = useRef(onUpdate);
+  useEffect(() => { onUpdateRef.current = onUpdate; });
+
   useEffect(() => {
-    // If status is downloading, start SSE
-    if (localStatus === 'downloading' || localStatus === 'pending') {
+    // Only open SSE when the backend is actively streaming (status=downloading)
+    // When status is 'pending', poll until it transitions to 'downloading'
+    if (localStatus === 'pending') {
+      const pollTimer = setTimeout(async () => {
+        try {
+          const statusData = await modelsApi.getModelStatus(model.id);
+          setLocalStatus(statusData.status);
+          setLocalProgress(statusData.progress || 0);
+          onUpdateRef.current({ status: statusData.status, progress: statusData.progress });
+        } catch (e) {}
+      }, 1000);
+      return () => clearTimeout(pollTimer);
+    }
+
+    if (localStatus === 'downloading') {
       const url = modelsApi.getProgressUrl(model.id);
       const sse = new EventSource(url);
       eventSourceRef.current = sse;
@@ -219,11 +236,11 @@ function ModelTableRow({ model, onRemove, onUpdate }: { model: ModelInfo; onRemo
           const data = JSON.parse(event.data);
           if (data.progress !== undefined) {
              setLocalProgress(data.progress);
-             onUpdate({ progress: data.progress });
+             onUpdateRef.current({ progress: data.progress });
           }
           if (data.status) {
              setLocalStatus(data.status);
-             onUpdate({ status: data.status });
+             onUpdateRef.current({ status: data.status });
              if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
                  sse.close();
              }
@@ -233,21 +250,14 @@ function ModelTableRow({ model, onRemove, onUpdate }: { model: ModelInfo; onRemo
         }
       };
 
-      sse.onerror = (err) => {
-        console.error("SSE error", err);
-        // Fallback to checking via API if SSE fails
-        const checkStatus = async () => {
-             try {
-                 const statusData = await modelsApi.getModelStatus(model.id);
-                 setLocalStatus(statusData.status);
-                 setLocalProgress(statusData.progress || 0);
-                 onUpdate({ status: statusData.status, progress: statusData.progress });
-                 if (statusData.status === 'completed' || statusData.status === 'failed' || statusData.status === 'cancelled') {
-                    sse.close();
-                 }
-             } catch(e) {}
-        };
-        checkStatus();
+      sse.onerror = () => {
+        sse.close();
+        // Fallback: poll the status once via API
+        modelsApi.getModelStatus(model.id).then((statusData) => {
+          setLocalStatus(statusData.status);
+          setLocalProgress(statusData.progress || 0);
+          onUpdateRef.current({ status: statusData.status, progress: statusData.progress });
+        }).catch(() => {});
       };
 
       return () => {
@@ -255,7 +265,7 @@ function ModelTableRow({ model, onRemove, onUpdate }: { model: ModelInfo; onRemo
         eventSourceRef.current = null;
       };
     }
-  }, [localStatus, model.id, onUpdate]);
+  }, [localStatus, model.id]);
 
   const handleCancel = async () => {
     try {

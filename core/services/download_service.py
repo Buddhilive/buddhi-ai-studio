@@ -24,6 +24,16 @@ logger = logging.getLogger(__name__)
 # Global thread pool for downloads
 _download_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hf-download-")
 
+def shutdown_download_service():
+    """Shutdown the download executor gracefully."""
+    logger.info("Shutting down download service")
+    # Using shutdown(wait=False) + cancel_futures=True is fastest
+    try:
+        _download_executor.shutdown(wait=False, cancel_futures=True)
+    except Exception as e:
+        logger.warning(f"Error during download executor shutdown: {e}")
+    logger.info("Download service shut down")
+
 # Track active downloads: download_id -> DownloadContext
 _active_downloads: dict[int, "DownloadContext"] = {}
 
@@ -120,7 +130,6 @@ async def start_download(model_id: str, quantization: Optional[str], db: Session
     db.add(download_record)
     db.commit()
     db.refresh(download_record)
-
     # Setup download context
     loop = asyncio.get_event_loop()
     ctx = DownloadContext(
@@ -146,9 +155,12 @@ async def start_download(model_id: str, quantization: Optional[str], db: Session
 
 def _update_download_status(download_id: int, status: str, **kwargs) -> bool:
     """Safely update download status in DB."""
-    from core.database.engine import SessionLocal
+    from core.database.engine import engine
+    from sqlalchemy.orm import sessionmaker
 
-    db = SessionLocal()
+    # Create a fresh session factory to avoid closed transaction issues
+    FreshSession = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    db = FreshSession()
     try:
         logger.debug(f"Updating download {download_id} to status={status}, kwargs={kwargs}")
         db.query(ModelDownload).filter(ModelDownload.id == download_id).update(
@@ -209,11 +221,11 @@ def _run_download_thread(
         # Get list of files
         try:
             logger.info(f"Fetching file list for {model_id}")
-            files = list_repo_files(
+            files = list(list_repo_files(
                 repo_id=model_id,
                 token=hf_token,
                 repo_type="model",
-            )
+            ))
             logger.info(f"Found {len(files)} files for {model_id}")
         except RepositoryNotFoundError:
             error = f"Model '{model_id}' not found on HuggingFace"
@@ -262,6 +274,7 @@ def _run_download_thread(
 
         # Download files one by one
         total_files = len(files)
+        last_progress_update = 0.0  # Track last reported progress to update only at 20% intervals
         for i, filename in enumerate(files):
             if ctx.cancel_event.is_set():
                 error = "Download cancelled by user"
@@ -308,21 +321,17 @@ def _run_download_thread(
                 ))
                 return
 
-            # Update progress
+            # Send progress event via SSE (no DB update during download)
             progress = ((i + 1) / total_files) * 100
-            _update_download_status(download_id, "downloading", progress=progress)
-
-            # Send progress event (non-blocking)
-            event = ProgressEvent(
-                download_id=download_id,
-                status="downloading",
-                progress=progress,
-                message=f"Downloaded {i + 1}/{total_files} files",
-            )
-            try:
-                ctx.progress_queue.put_nowait(event)
-            except:
-                pass
+            if progress - last_progress_update >= 20.0 or i == total_files - 1:
+                last_progress_update = progress
+                event = ProgressEvent(
+                    download_id=download_id,
+                    status="downloading",
+                    progress=progress,
+                    message=f"Downloaded {i + 1}/{total_files} files",
+                )
+                _push_event(ctx, event)
 
         # Mark as completed
         _update_download_status(
@@ -340,10 +349,7 @@ def _run_download_thread(
             progress=100.0,
             message="Download completed successfully",
         )
-        try:
-            ctx.progress_queue.put_nowait(event)
-        except:
-            pass
+        _push_event(ctx, event)
 
     except Exception as e:
         logger.error(f"Unexpected error in download thread: {e}", exc_info=True)

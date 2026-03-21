@@ -27,7 +27,7 @@ async def request_model_download(
     return DownloadRecord.from_orm(download_record)
 
 
-@router.get("", response_model=list[DownloadRecord])
+@router.get("")
 async def list_downloads(db: Session = Depends(get_db)) -> list[DownloadRecord]:
     """List all model downloads."""
     records = db.query(ModelDownload).all()
