@@ -2,20 +2,19 @@ from pydantic import BaseModel, Field
 
 
 class DownloadRequest(BaseModel):
-    """Request to download a model."""
+    """Request to pull an Ollama model."""
 
-    model_id: str = Field(min_length=1, description="HuggingFace repo ID, e.g., 'unsloth/Qwen3.5-0.8B-GGUF'")
-    quantization: str = Field(default="Q4_K_M", description="Quantization type, e.g., 'Q4_K_M'")
+    model: str = Field(min_length=1, description="Ollama model name, e.g. 'qwen3.5:3b'")
 
 
 class ModelRecord(BaseModel):
-    """Model download record (in-memory state)."""
+    """Model record returned to the frontend."""
 
     id: str
     model_id: str
     name: str
     quantization: str
-    status: str = Field(description="Status: pending | downloading | completed | failed | corrupted")
+    status: str = Field(description="Status: pending | pulling | completed | failed")
     progress: int = Field(ge=0, le=100, description="Progress percentage (0 to 100)")
-    path: str | None = Field(None, description="Local path to downloaded .gguf file")
+    path: str | None = Field(None, description="Always null for Ollama-managed models")
     error: str | None = Field(None, description="Error message if status is failed")

@@ -1,6 +1,5 @@
 export interface ModelDownloadRequest {
-  model_id: string;
-  quantization: string;
+  model: string;  // Ollama model name, e.g. "qwen3.5:3b"
 }
 
 export interface ModelInfo {
@@ -8,7 +7,7 @@ export interface ModelInfo {
   model_id?: string;
   name: string;
   quantization: string;
-  status: 'pending' | 'downloading' | 'completed' | 'failed' | 'cancelled' | 'corrupted';
+  status: 'pending' | 'pulling' | 'completed' | 'failed';
   progress?: number;
   total_size?: number;
   downloaded_size?: number;

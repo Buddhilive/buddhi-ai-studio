@@ -20,8 +20,7 @@ import { Trash2Icon, XCircleIcon, DownloadIcon, RefreshCcwIcon, AlertCircleIcon,
 // ─── Static recommended model catalogue ──────────────────────────────────────
 
 interface RecommendedModel {
-  model_id: string;
-  quantization: string;
+  model_id: string;  // Ollama model name, e.g. "qwen3.5:3b"
   label: string;
   description: string;
   type: "language" | "embedding";
@@ -29,16 +28,14 @@ interface RecommendedModel {
 
 const RECOMMENDED_MODELS: RecommendedModel[] = [
   {
-    model_id: "unsloth/Qwen3.5-2B-GGUF",
-    quantization: "Q4_K_M",
+    model_id: "qwen3.5:2b",
     label: "Qwen 3.5 2B",
     description: "Lightweight language model optimised for fast inference on CPU.",
     type: "language",
   },
   {
-    model_id: "ggml-org/bge-small-en-v1.5-Q8_0-GGUF",
-    quantization: "Q8_0",
-    label: "BGE Small",
+    model_id: "embeddinggemma:300m",
+    label: "Embedding Gemma 300M",
     description: "Compact embedding model for semantic search and retrieval tasks.",
     type: "embedding",
   },
@@ -132,7 +129,7 @@ export function ModelsView() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {RECOMMENDED_MODELS.map(recommended => {
             const installed = installedModels.find(
-              m => m.model_id === recommended.model_id || m.id === recommended.model_id.replace("/", "_")
+              m => m.model_id === recommended.model_id || m.id === recommended.model_id.replace(":", "_")
             ) ?? null;
             return (
               <ModelCard
@@ -227,7 +224,7 @@ function ModelCard({
       return () => { cancelled = true; clearTimeout(timer); };
     }
 
-    if (localStatus === "downloading") {
+    if (localStatus === "pulling") {
       const url = modelsApi.getProgressUrl(currentId);
       const sse = new EventSource(url);
 
@@ -241,7 +238,7 @@ function ModelCard({
           if (data.status) {
             setLocalStatus(data.status);
             onUpdatedRef.current(currentId, { status: data.status });
-            if (["completed", "failed", "corrupted"].includes(data.status)) {
+            if (["completed", "failed"].includes(data.status)) {
               sse.close();
             }
           }
@@ -267,8 +264,7 @@ function ModelCard({
     try {
       setIsInstalling(true);
       const result = await modelsApi.downloadModel({
-        model_id: recommended.model_id,
-        quantization: recommended.quantization,
+        model: recommended.model_id,
       });
       installedIdRef.current = result.id;
       setLocalStatus(result.status);
@@ -321,7 +317,7 @@ function ModelCard({
     }
   };
 
-  const inProgress = localStatus === "downloading" || localStatus === "pending";
+  const inProgress = localStatus === "pulling" || localStatus === "pending";
 
   return (
     <>
@@ -344,7 +340,7 @@ function ModelCard({
 
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-xs font-mono">
-              {recommended.quantization}
+              {recommended.model_id.includes(":") ? recommended.model_id.split(":")[1] : "latest"}
             </Badge>
             <Badge variant="outline" className="text-xs capitalize">
               {recommended.type}
@@ -367,16 +363,10 @@ function ModelCard({
             </div>
           )}
 
-          {localStatus === "corrupted" && (
-            <div className="flex items-center gap-2 text-xs text-destructive">
-              <AlertCircleIcon className="h-3.5 w-3.5 shrink-0" />
-              <span>Model file is corrupted. Delete and reinstall.</span>
-            </div>
-          )}
         </CardContent>
 
         <CardFooter>
-          {localStatus === "not_installed" || localStatus === "failed" || localStatus === "corrupted" ? (
+          {localStatus === "not_installed" || localStatus === "failed" ? (
             <Button
               className="w-full"
               size="sm"
@@ -388,7 +378,7 @@ function ModelCard({
               ) : (
                 <DownloadIcon className="mr-2 h-4 w-4" />
               )}
-              {localStatus === "failed" || localStatus === "corrupted" ? "Retry Install" : "Install"}
+              {localStatus === "failed" ? "Retry Install" : "Install"}
             </Button>
           ) : inProgress ? (
             <Button
@@ -467,14 +457,12 @@ function StatusBadge({ status }: { status: ModelInfo["status"] | "not_installed"
           Installed
         </Badge>
       );
-    case "downloading":
-      return <Badge variant="secondary" className="animate-pulse shrink-0">Downloading</Badge>;
+    case "pulling":
+      return <Badge variant="secondary" className="animate-pulse shrink-0">Pulling</Badge>;
     case "pending":
       return <Badge variant="outline" className="shrink-0">Pending</Badge>;
     case "failed":
       return <Badge variant="destructive" className="shrink-0">Failed</Badge>;
-    case "corrupted":
-      return <Badge variant="destructive" className="shrink-0">Corrupted</Badge>;
     case "not_installed":
     default:
       return <Badge variant="outline" className="text-muted-foreground shrink-0">Not Installed</Badge>;

@@ -1,102 +1,100 @@
 import asyncio
 import json
 import logging
-import os
-from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from core.schemas.download import DownloadRequest, ModelRecord
-from core.services.download_service import DownloadEntry, download_store, do_download, sanitize_id
+from core.services.download_service import (
+    PullEntry,
+    pull_store,
+    sanitize_id,
+    do_pull,
+    delete_ollama_model,
+    get_ollama_models,
+)
 
 router = APIRouter(prefix="/models", tags=["models"])
 logger = logging.getLogger(__name__)
 
 
 @router.post("/download", status_code=status.HTTP_202_ACCEPTED, response_model=ModelRecord)
-async def request_model_download(
+async def request_model_pull(
     request: DownloadRequest,
     background_tasks: BackgroundTasks,
 ) -> ModelRecord:
     """
-    Start a new model download from HuggingFace.
+    Start a new Ollama model pull.
 
-    Returns 202 Accepted if the download is queued successfully.
-    Returns 409 Conflict if a download for this model is already pending or downloading.
+    Returns 202 Accepted if the pull is queued.
+    Returns 409 Conflict if a pull is already active for this model.
     """
-    entry_id = sanitize_id(request.model_id)
+    entry_id = sanitize_id(request.model)
 
-    # Check for existing active download
-    existing = download_store.get(entry_id)
-    if existing and existing.status in ("pending", "downloading"):
+    existing = pull_store.get(entry_id)
+    if existing and existing.status in ("pending", "pulling"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Download already in progress for {request.model_id}",
+            detail=f"Pull already in progress for {request.model}",
         )
 
-    # Create new entry
-    entry = DownloadEntry(
+    entry = PullEntry(
         id=entry_id,
-        repo_id=request.model_id,
-        name=request.model_id.split("/")[-1] if "/" in request.model_id else request.model_id,
-        quantization=request.quantization,
+        model=request.model,
+        name=request.model.split(":")[0],
         status="pending",
         percentage=0,
-        path=None,
-        filename=None,
-        error=None,
     )
-    download_store[entry_id] = entry
+    pull_store[entry_id] = entry
 
-    # Add background task
-    hf_token = os.getenv("HF_TOKEN")
-    background_tasks.add_task(do_download, request.model_id, request.quantization, hf_token)
+    background_tasks.add_task(do_pull, request.model)
 
-    logger.info(f"Download queued: {request.model_id} ({request.quantization})")
+    logger.info(f"Pull queued: {request.model}")
     return ModelRecord(**entry.to_dict())
 
 
 @router.get("", response_model=list[ModelRecord])
-async def list_downloads() -> list[ModelRecord]:
-    """List all model downloads."""
-    return [ModelRecord(**entry.to_dict()) for entry in download_store.values()]
+async def list_models() -> list[ModelRecord]:
+    """
+    List all models: active/failed pulls from pull_store plus any
+    Ollama-installed models not yet in the store.
+    """
+    # Merge Ollama's installed list into pull_store (completed entries)
+    installed = get_ollama_models()
+    for m in installed:
+        name = m.get("name", "")
+        if not name:
+            continue
+        entry_id = sanitize_id(name)
+        if entry_id not in pull_store:
+            pull_store[entry_id] = PullEntry(
+                id=entry_id,
+                model=name,
+                name=name.split(":")[0],
+                status="completed",
+                percentage=100,
+            )
+
+    return [ModelRecord(**entry.to_dict()) for entry in pull_store.values()]
 
 
-# IMPORTANT: More specific routes MUST come before the catch-all /{model_id:path} route
-# Otherwise GET /download will match /{model_id:path} with model_id="download"
-
+# IMPORTANT: specific routes must come before /{model_id:path}
 
 @router.get("/{model_id:path}/progress")
-async def stream_download_progress(model_id: str):
-    """
-    Stream download progress via Server-Sent Events (SSE).
-    Polls the in-memory download_store every 1 second.
-
-    The model_id should be the sanitized form (repo_id with / replaced by _).
-    """
+async def stream_pull_progress(model_id: str):
+    """Stream pull progress via Server-Sent Events (SSE). Polls pull_store every second."""
 
     async def event_stream():
-        """Generate SSE events for download progress."""
+        normalized = model_id.replace("/", "_")
         try:
-            # Normalize the model_id in case it comes with slashes
-            normalized_id = model_id.replace("/", "_")
-
             while True:
-                entry = download_store.get(normalized_id)
+                entry = pull_store.get(normalized)
                 if not entry:
-                    logger.debug(f"Model {normalized_id} not found in download_store (got: {model_id})")
                     break
-
-                # Yield current state
-                data = entry.to_dict()
-                yield f"data: {json.dumps(data)}\n\n"
-
-                # Stop if terminal state
-                if entry.status in ("completed", "failed", "corrupted"):
+                yield f"data: {json.dumps(entry.to_dict())}\n\n"
+                if entry.status in ("completed", "failed"):
                     break
-
-                # Poll interval
                 await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"SSE stream error: {e}")
@@ -114,47 +112,35 @@ async def stream_download_progress(model_id: str):
 
 
 @router.get("/{model_id:path}", response_model=ModelRecord)
-async def get_download(model_id: str) -> ModelRecord:
-    """Get a specific download record by model ID (sanitized repo ID)."""
-    # Normalize the model_id in case it comes with slashes
-    normalized_id = model_id.replace("/", "_")
-    entry = download_store.get(normalized_id)
+async def get_model(model_id: str) -> ModelRecord:
+    """Get a specific model record by sanitized model ID."""
+    normalized = model_id.replace("/", "_")
+    entry = pull_store.get(normalized)
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
     return ModelRecord(**entry.to_dict())
 
 
 @router.delete("/{model_id:path}", response_model=ModelRecord)
-async def cancel_or_delete_download(model_id: str) -> ModelRecord:
-    """
-    Cancel a pending/downloading download or delete a completed entry.
-    Also deletes the local .gguf and .verified files if they exist.
-    """
-    # Normalize the model_id in case it comes with slashes
-    normalized_id = model_id.replace("/", "_")
-    entry = download_store.get(normalized_id)
+async def delete_model(model_id: str) -> ModelRecord:
+    """Delete a model from Ollama and remove it from pull_store."""
+    normalized = model_id.replace("/", "_")
+    entry = pull_store.get(normalized)
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model not found")
 
     record = ModelRecord(**entry.to_dict())
 
-    # Delete local files if they exist
-    if entry.path:
+    if entry.status == "completed":
         try:
-            gguf_path = Path(entry.path)
-            if gguf_path.exists():
-                gguf_path.unlink()
-                logger.info(f"Deleted {gguf_path}")
-
-            verified_path = gguf_path.with_suffix(gguf_path.suffix + ".verified")
-            if verified_path.exists():
-                verified_path.unlink()
-                logger.info(f"Deleted {verified_path}")
+            delete_ollama_model(entry.model)
         except Exception as e:
-            logger.error(f"Failed to delete files for {model_id}: {e}")
+            logger.error(f"Failed to delete Ollama model {entry.model}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete model from Ollama: {e}",
+            )
 
-    # Remove from store
-    del download_store[normalized_id]
-    logger.info(f"Removed download entry: {model_id}")
-
+    del pull_store[normalized]
+    logger.info(f"Removed model entry: {entry.model}")
     return record

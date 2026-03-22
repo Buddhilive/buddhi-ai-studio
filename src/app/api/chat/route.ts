@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     });
 
     const result = streamText({
-        model: openai.chat('unsloth/Qwen3.5-2B-GGUF'),
+        model: openai.chat('qwen3.5:3b'),
         messages: await convertToModelMessages(messages),
         system:
             "You are a helpful assistant that can answer questions and help with tasks",

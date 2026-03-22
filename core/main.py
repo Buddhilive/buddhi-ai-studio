@@ -24,28 +24,29 @@ logger.setLevel(logging.DEBUG)
 async def lifespan(_: FastAPI):
     """Application lifespan context manager."""
     print("--- [DIAGNOSTIC] lifespan startup beginning ---", file=sys.stderr, flush=True)
+
     # Startup
+    import httpx
+    from core.config import settings
+    from core.services.download_service import scan_installed_models
+
+    # Check Ollama connectivity
     try:
-        # Scan local models directory and populate download_store
-        from core.services.download_service import scan_models_dir
-        scan_models_dir()
-        logger.info("Download store initialized from disk")
-
-        # Initialize model cache for inference
-        from core.services.model_cache import init_model_cache
-        from core.config import settings
-        init_model_cache(max_models=settings.inference_max_loaded_models)
-        logger.info("Model cache initialized")
-
+        resp = httpx.get(f"{settings.ollama_base_url}/api/version", timeout=5)
+        resp.raise_for_status()
+        logger.info(f"Ollama server reachable at {settings.ollama_base_url} (version: {resp.json().get('version', '?')})")
     except Exception as e:
-        logger.error(f"Startup error: {e}")
-        raise
+        logger.warning(
+            f"Ollama server not reachable at {settings.ollama_base_url}: {e}. "
+            "Make sure Ollama is running before making inference requests."
+        )
+
+    # Populate pull_store from Ollama's installed models
+    scan_installed_models()
+    logger.info("Pull store initialized from Ollama")
 
     yield
 
-    # Shutdown
-    from core.services.model_cache import shutdown_model_cache
-    shutdown_model_cache()
     logger.info("Application shutting down")
 
 

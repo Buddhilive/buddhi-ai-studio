@@ -1,277 +1,182 @@
+"""Ollama model pull service — replaces the previous HuggingFace download service."""
+
 import json
 import logging
-import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
 import httpx
-from huggingface_hub import list_repo_files
+
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Global download store (in-memory)
-download_store: dict[str, "DownloadEntry"] = {}
-
-# Models directory
-MODELS_DIR = Path(os.getenv("HF_MODELS_DIR", "./data/models"))
+# In-memory store for active/completed pulls
+pull_store: dict[str, "PullEntry"] = {}
 
 
 @dataclass
-class DownloadEntry:
-    """State for a single model download."""
+class PullEntry:
+    """State for a single Ollama model pull."""
 
-    id: str  # sanitized repo_id (e.g., "unsloth_Qwen3.5-0.8B-GGUF")
-    repo_id: str  # original HF repo ID (e.g., "unsloth/Qwen3.5-0.8B-GGUF")
-    name: str  # display name (derived from repo_id)
-    quantization: str  # e.g., "Q4_K_M"
-    status: str  # pending | downloading | completed | failed | corrupted
+    id: str          # sanitized model name, e.g. "qwen3.5_3b"
+    model: str       # Ollama model name, e.g. "qwen3.5:3b"
+    name: str        # display name
+    status: str      # pending | pulling | completed | failed
     percentage: int  # 0-100
-    path: Optional[str] = None  # absolute path to final .gguf file
-    filename: Optional[str] = None  # just the filename
     error: Optional[str] = None
 
     def to_dict(self) -> dict:
-        """Convert to dict for JSON serialization."""
+        """Serialize to the ModelRecord shape expected by the frontend."""
+        tag = self.model.split(":")[-1] if ":" in self.model else ""
         return {
             "id": self.id,
-            "model_id": self.repo_id,
+            "model_id": self.model,
             "name": self.name,
-            "quantization": self.quantization,
+            "quantization": tag,
             "status": self.status,
             "progress": self.percentage,
-            "path": self.path,
+            "path": None,
             "error": self.error,
         }
 
 
-def sanitize_id(repo_id: str) -> str:
-    """Convert repo_id to a safe dictionary key."""
-    return repo_id.replace("/", "_")
+def sanitize_id(model: str) -> str:
+    """Convert an Ollama model name to a safe dictionary key."""
+    return model.replace(":", "_").replace("/", "_")
 
 
-def get_model_path(repo_id: str) -> Optional[str]:
+# ── Ollama API helpers ────────────────────────────────────────────────────────
+
+def get_ollama_models() -> list[dict]:
     """
-    Get the local path to a completed model if it exists and is verified.
-    Returns None if not found, not completed, or .verified sidecar is missing.
+    Fetch list of installed models from Ollama.
+    Returns list of dicts with at least 'name' key.
+    Returns empty list if Ollama is unreachable.
     """
-    entry = download_store.get(sanitize_id(repo_id))
-    if not entry or entry.status != "completed" or not entry.path:
-        return None
-
-    # Verify sidecar exists
-    verified_path = Path(entry.path).with_suffix(Path(entry.path).suffix + ".verified")
-    if not verified_path.exists():
-        logger.warning(f"Model {repo_id} marked completed but .verified sidecar missing: {verified_path}")
-        entry.status = "corrupted"
-        entry.error = "Missing verification sidecar"
-        return None
-
-    return entry.path
+    try:
+        resp = httpx.get(
+            f"{settings.ollama_base_url}/api/tags",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json().get("models", [])
+    except Exception as e:
+        logger.warning(f"Could not fetch Ollama models: {e}")
+        return []
 
 
-def scan_models_dir() -> None:
+def delete_ollama_model(model: str) -> None:
     """
-    Scan ./models directory at startup.
-    Rebuild download_store from .gguf files and their .verified sidecars.
+    Delete a model from Ollama.
+    Raises httpx.HTTPError on failure.
     """
-    global download_store
-    download_store.clear()
+    resp = httpx.request(
+        "DELETE",
+        f"{settings.ollama_base_url}/api/delete",
+        json={"name": model},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    logger.info(f"Deleted Ollama model: {model}")
 
-    if not MODELS_DIR.exists():
-        logger.info(f"Models directory does not exist yet: {MODELS_DIR}")
+
+# ── Startup scan ─────────────────────────────────────────────────────────────
+
+def scan_installed_models() -> None:
+    """
+    Populate pull_store from Ollama's installed model list at startup.
+    Existing in-progress entries are not overwritten.
+    """
+    global pull_store
+    models = get_ollama_models()
+    for m in models:
+        name = m.get("name", "")
+        if not name:
+            continue
+        entry_id = sanitize_id(name)
+        if entry_id not in pull_store:
+            pull_store[entry_id] = PullEntry(
+                id=entry_id,
+                model=name,
+                name=name.split(":")[0],
+                status="completed",
+                percentage=100,
+            )
+    logger.info(f"Loaded {len(models)} installed Ollama model(s) into pull_store")
+
+
+# ── Background pull task ──────────────────────────────────────────────────────
+
+def do_pull(model: str) -> None:
+    """
+    Pull a model from Ollama with live progress tracking.
+
+    Runs as a background task (blocking). Updates pull_store entry in real time.
+    Ollama streams NDJSON lines:
+        {"status":"pulling manifest"}
+        {"status":"pulling ...","total":1234567,"completed":500000}
+        {"status":"success"}
+    """
+    entry_id = sanitize_id(model)
+    entry = pull_store.get(entry_id)
+    if not entry:
+        logger.error(f"Pull entry not found for {model}")
         return
 
-    gguf_files = list(MODELS_DIR.glob("*.gguf"))
-    logger.info(f"Found {len(gguf_files)} .gguf files in {MODELS_DIR}")
+    try:
+        logger.info(f"Starting Ollama pull: {model}")
+        entry.status = "pulling"
 
-    for gguf_path in gguf_files:
-        verified_path = gguf_path.with_suffix(gguf_path.suffix + ".verified")
+        with httpx.stream(
+            "POST",
+            f"{settings.ollama_base_url}/api/pull",
+            json={"name": model, "stream": True},
+            timeout=httpx.Timeout(connect=30.0, read=None, write=None, pool=None),
+        ) as resp:
+            if resp.status_code == 404:
+                entry.status = "failed"
+                entry.error = f"Model '{model}' not found in Ollama registry"
+                return
+            resp.raise_for_status()
 
-        if verified_path.exists():
-            try:
-                with open(verified_path, "r") as f:
-                    metadata = json.load(f)
-                repo_id = metadata.get("repo_id")
-                quantization = metadata.get("quantization", "unknown")
-                filename = metadata.get("filename", gguf_path.name)
-
-                if not repo_id:
-                    logger.warning(f"Invalid .verified file (no repo_id): {verified_path}")
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
                     continue
 
-                entry = DownloadEntry(
-                    id=sanitize_id(repo_id),
-                    repo_id=repo_id,
-                    name=repo_id.split("/")[-1],
-                    quantization=quantization,
-                    status="completed",
-                    percentage=100,
-                    path=str(gguf_path.resolve()),
-                    filename=filename,
-                    error=None,
-                )
-                download_store[entry.id] = entry
-                logger.info(f"Loaded verified model: {repo_id} ({quantization})")
-            except Exception as e:
-                logger.error(f"Failed to load .verified file {verified_path}: {e}")
-        else:
-            # .gguf exists but no .verified sidecar — mark as corrupted
-            logger.warning(f"Found orphaned .gguf file (no .verified sidecar): {gguf_path}")
-            filename_base = gguf_path.stem
-            entry = DownloadEntry(
-                id=sanitize_id(filename_base),
-                repo_id=filename_base,
-                name=filename_base,
-                quantization="unknown",
-                status="corrupted",
-                percentage=0,
-                path=str(gguf_path),
-                filename=gguf_path.name,
-                error="Missing verification sidecar; file may be incomplete",
-            )
-            download_store[entry.id] = entry
+                status = data.get("status", "")
 
-
-def _find_gguf_filename(repo_id: str, quantization: str) -> str:
-    """
-    List files in HF repo and find the best .gguf match.
-    Prefer filename matching the quantization string (case-insensitive).
-    Falls back to first .gguf if no quantization match.
-    """
-    try:
-        files = list(list_repo_files(repo_id=repo_id, repo_type="model"))
-        gguf_files = [f for f in files if f.endswith(".gguf")]
-
-        if not gguf_files:
-            raise ValueError(f"No .gguf files found in {repo_id}")
-
-        quantization_lower = quantization.lower()
-        for filename in gguf_files:
-            if quantization_lower in filename.lower():
-                logger.info(f"Found {quantization} match: {filename}")
-                return filename
-
-        logger.warning(f"No {quantization} match found; using first .gguf: {gguf_files[0]}")
-        return gguf_files[0]
-    except Exception as e:
-        logger.error(f"Failed to list files for {repo_id}: {e}")
-        raise
-
-
-def do_download(
-    repo_id: str,
-    quantization: str,
-    hf_token: Optional[str],
-) -> None:
-    """
-    Download a GGUF model from HuggingFace with inline progress tracking.
-    Uses httpx streaming so entry.percentage updates in real time.
-    """
-    entry_id = sanitize_id(repo_id)
-    entry = download_store.get(entry_id)
-
-    if not entry:
-        logger.error(f"Download entry not found for {repo_id}")
-        return
-
-    try:
-        logger.info(f"Download started: {repo_id} ({quantization})")
-
-        # Step 1: Resolve filename
-        try:
-            filename = _find_gguf_filename(repo_id, quantization)
-            entry.filename = filename
-            logger.info(f"Target file: {filename}")
-        except Exception as e:
-            entry.status = "failed"
-            entry.error = f"Failed to find GGUF file: {e}"
-            return
-
-        # Step 2: Prepare paths
-        MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        output_path = MODELS_DIR / filename
-        temp_path = MODELS_DIR / f"{filename}.incomplete"
-
-        # Step 3: Stream download with live progress
-        entry.status = "downloading"
-        url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
-        headers = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
-        total_size = 0
-
-        try:
-            with httpx.stream(
-                "GET",
-                url,
-                headers=headers,
-                follow_redirects=True,
-                timeout=httpx.Timeout(connect=30.0, read=None, write=None, pool=None),
-            ) as response:
-                if response.status_code == 404:
-                    entry.status = "failed"
-                    entry.error = f"Model '{repo_id}' not found on HuggingFace"
+                if status == "success":
+                    entry.status = "completed"
+                    entry.percentage = 100
+                    logger.info(f"Ollama pull completed: {model}")
                     return
-                if response.status_code in (401, 403):
+
+                total = data.get("total", 0)
+                completed = data.get("completed", 0)
+                if total and completed:
+                    entry.percentage = min(99, int(completed / total * 100))
+
+                if "error" in data:
                     entry.status = "failed"
-                    entry.error = f"Model '{repo_id}' is gated. Please provide HF_TOKEN with access."
+                    entry.error = data["error"]
+                    logger.error(f"Ollama pull error for {model}: {data['error']}")
                     return
-                response.raise_for_status()
 
-                total_size = int(response.headers.get("content-length", 0))
-                logger.info(f"Download size: {total_size} bytes")
-                downloaded = 0
-
-                with open(temp_path, "wb") as f:
-                    for chunk in response.iter_bytes(chunk_size=512 * 1024):
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total_size:
-                            entry.percentage = min(99, int(downloaded / total_size * 100))
-
-            temp_path.rename(output_path)
-            local_path = str(output_path.resolve())
-            logger.info(f"Downloaded to: {local_path}")
-
-        except httpx.HTTPStatusError as e:
-            if temp_path.exists():
-                temp_path.unlink()
+        # If stream ended without success
+        if entry.status != "completed":
             entry.status = "failed"
-            entry.error = f"HuggingFace API error: HTTP {e.response.status_code}"
-            logger.error(entry.error)
-            return
-        except Exception as e:
-            if temp_path.exists():
-                temp_path.unlink()
-            entry.status = "failed"
-            entry.error = f"Download failed: {e}"
-            logger.error(entry.error, exc_info=True)
-            return
+            entry.error = "Pull stream ended without success"
 
-        # Step 4: Write verification sidecar
-        try:
-            verified_path = Path(local_path).with_suffix(Path(local_path).suffix + ".verified")
-            metadata = {
-                "repo_id": repo_id,
-                "quantization": quantization,
-                "filename": filename,
-                "size": total_size or None,
-            }
-            with open(verified_path, "w") as f:
-                json.dump(metadata, f, indent=2)
-            logger.info(f"Wrote verification sidecar: {verified_path}")
-        except Exception as e:
-            entry.status = "failed"
-            entry.error = f"Failed to write verification sidecar: {e}"
-            logger.error(entry.error)
-            return
-
-        # Step 5: Mark completed
-        entry.status = "completed"
-        entry.percentage = 100
-        entry.path = local_path
-        logger.info(f"Download completed: {repo_id}")
-
+    except httpx.HTTPStatusError as e:
+        entry.status = "failed"
+        entry.error = f"Ollama API error: HTTP {e.response.status_code}"
+        logger.error(entry.error)
     except Exception as e:
         entry.status = "failed"
-        entry.error = f"Unexpected error: {e}"
+        entry.error = f"Pull failed: {e}"
         logger.error(entry.error, exc_info=True)
