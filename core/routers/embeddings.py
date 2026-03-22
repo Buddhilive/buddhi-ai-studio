@@ -15,9 +15,6 @@ from core.services.embedding_service import (
 from core.services.inference_service import (
     ModelNotFoundError,
     ModelNotReadyError,
-    GGUFFileNotFoundError,
-    AmbiguousGGUFError,
-    ModelLoadError,
     InferenceRuntimeError,
     InferenceError,
 )
@@ -43,7 +40,7 @@ async def create_embeddings(request: EmbeddingRequest):
     """
     OpenAI-compatible embeddings endpoint.
 
-    Generates embeddings for input text(s) using a local GGUF model.
+    Generates embeddings for input text(s) via Ollama.
 
     Args:
         request: EmbeddingRequest with input, model, and optional encoding_format, dimensions
@@ -69,21 +66,6 @@ async def create_embeddings(request: EmbeddingRequest):
         logger.error(f"Model not ready: {e}")
         error = _error_response(str(e), "model_not_ready", 422)
         raise HTTPException(status_code=422, detail=error)
-
-    except GGUFFileNotFoundError as e:
-        logger.error(f"GGUF file not found: {e}")
-        error = _error_response(str(e), "model_file_missing", 500)
-        raise HTTPException(status_code=500, detail=error)
-
-    except AmbiguousGGUFError as e:
-        logger.error(f"Ambiguous GGUF files: {e}")
-        error = _error_response(str(e), "ambiguous_model", 422)
-        raise HTTPException(status_code=422, detail=error)
-
-    except ModelLoadError as e:
-        logger.error(f"Model load error: {e}")
-        error = _error_response(str(e), "model_load_failed", 500)
-        raise HTTPException(status_code=500, detail=error)
 
     except InferenceRuntimeError as e:
         logger.error(f"Inference runtime error: {e}")
