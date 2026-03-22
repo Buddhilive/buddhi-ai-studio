@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import {
   Collapsible,
   CollapsibleContent,
@@ -39,24 +40,24 @@ export function NavMain({
           <Collapsible
             key={item.title}
             asChild
-            defaultOpen={item.isActive}
+            open={item.items ? item.isActive : undefined}
             className="group/collapsible"
           >
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
                 {item.items ? (
-                  <SidebarMenuButton tooltip={item.title}>
+                  <SidebarMenuButton tooltip={item.title} isActive={item.isActive}>
                     {item.icon}
                     <span>{item.title}</span>
                     <ChevronRightIcon className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                   </SidebarMenuButton>
                 ) : (
-                  <a href={item.url}>
-                    <SidebarMenuButton tooltip={item.title}>
+                  <SidebarMenuButton tooltip={item.title} isActive={item.isActive} asChild>
+                    <Link href={item.url}>
                       {item.icon}
                       <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  </a>
+                    </Link>
+                  </SidebarMenuButton>
                 )}
               </CollapsibleTrigger>
               <CollapsibleContent>
@@ -64,9 +65,9 @@ export function NavMain({
                   {item.items?.map((subItem) => (
                     <SidebarMenuSubItem key={subItem.title}>
                       <SidebarMenuSubButton asChild>
-                        <a href={subItem.url}>
+                        <Link href={subItem.url}>
                           <span>{subItem.title}</span>
-                        </a>
+                        </Link>
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>
                   ))}
