@@ -107,7 +107,7 @@ def scan_models_dir() -> None:
                     quantization=quantization,
                     status="completed",
                     percentage=100,
-                    path=str(gguf_path),
+                    path=str(gguf_path.resolve()),
                     filename=filename,
                     error=None,
                 )

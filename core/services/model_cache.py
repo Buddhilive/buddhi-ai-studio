@@ -1,6 +1,7 @@
 """LRU model cache for loaded GGUF models with per-model locking."""
 
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import threading
 import time
@@ -21,6 +22,7 @@ class CacheEntry:
     last_used: float
     model_id: str
     quantization: str | None
+    embedding: bool
 
 
 class ModelCache:
@@ -28,7 +30,7 @@ class ModelCache:
 
     def __init__(self, max_models: int):
         self._max = max_models
-        self._entries: dict[tuple[str, str | None], CacheEntry] = {}
+        self._entries: dict[tuple[str, str | None, bool], CacheEntry] = {}
         self._cache_lock = threading.Lock()
 
     def load_model(
@@ -39,6 +41,7 @@ class ModelCache:
         n_ctx: int,
         n_gpu_layers: int,
         n_threads: Optional[int] = None,
+        embedding: bool = False,
     ) -> CacheEntry:
         """
         Load a GGUF model into memory.
@@ -52,6 +55,7 @@ class ModelCache:
             n_ctx: Context window size
             n_gpu_layers: Layers to offload to GPU
             n_threads: CPU threads (None = auto)
+            embedding: If True, load model in embedding mode (for llama.embed())
 
         Returns:
             CacheEntry with loaded Llama instance
@@ -60,9 +64,10 @@ class ModelCache:
             ModelLoadError if loading fails
         """
         try:
+            mode_str = "embedding" if embedding else "chat"
             logger.info(
                 f"Loading model {model_id} from {gguf_path} "
-                f"(quantization={quantization}, n_ctx={n_ctx}, gpu_layers={n_gpu_layers})"
+                f"(quantization={quantization}, n_ctx={n_ctx}, gpu_layers={n_gpu_layers}, mode={mode_str})"
             )
 
             llama = Llama(
@@ -70,10 +75,11 @@ class ModelCache:
                 n_ctx=n_ctx,
                 n_gpu_layers=n_gpu_layers,
                 n_threads=n_threads,
+                embedding=embedding,
                 verbose=False,
             )
 
-            logger.info(f"Successfully loaded {model_id}")
+            logger.info(f"Successfully loaded {model_id} ({mode_str})")
 
             entry = CacheEntry(
                 llama=llama,
@@ -81,12 +87,14 @@ class ModelCache:
                 last_used=time.monotonic(),
                 model_id=model_id,
                 quantization=quantization,
+                embedding=embedding,
             )
             return entry
         except Exception as e:
             logger.error(f"Failed to load model {model_id}: {e}")
             raise
 
+    @asynccontextmanager
     async def acquire(
         self,
         model_id: str,
@@ -95,7 +103,8 @@ class ModelCache:
         n_ctx: int,
         n_gpu_layers: int,
         n_threads: Optional[int] = None,
-    ) -> "CacheContextManager":
+        embedding: bool = False,
+    ):
         """
         Acquire a model for inference.
 
@@ -105,7 +114,7 @@ class ModelCache:
         Usage:
             async with cache.acquire(...) as llama:
                 # run inference
-                result = llama.create_chat_completion(...)
+                result = llama.create_chat_completion(...) or llama.embed(...)
 
         Args:
             model_id: HuggingFace model ID
@@ -114,12 +123,13 @@ class ModelCache:
             n_ctx: Context window size
             n_gpu_layers: GPU layers
             n_threads: CPU threads
+            embedding: If True, acquire in embedding mode
 
         Yields:
             Llama instance
         """
         loop = asyncio.get_event_loop()
-        key = (model_id, quantization)
+        key = (model_id, quantization, embedding)
 
         # Check cache and load if needed
         with self._cache_lock:
@@ -138,6 +148,7 @@ class ModelCache:
                     n_ctx,
                     n_gpu_layers,
                     n_threads,
+                    embedding,
                 )
                 self._entries[key] = entry
             else:
@@ -159,7 +170,8 @@ class ModelCache:
         lru_key = min(self._entries.keys(), key=lambda k: self._entries[k].last_used)
         entry = self._entries.pop(lru_key)
 
-        logger.info(f"Evicting model {entry.model_id} (quantization={entry.quantization}) from cache")
+        mode_str = "embedding" if entry.embedding else "chat"
+        logger.info(f"Evicting model {entry.model_id} (quantization={entry.quantization}, mode={mode_str}) from cache")
 
         # Cleanup
         try:
@@ -173,7 +185,8 @@ class ModelCache:
         with self._cache_lock:
             for key, entry in list(self._entries.items()):
                 try:
-                    logger.info(f"Unloading {entry.model_id}")
+                    mode_str = "embedding" if entry.embedding else "chat"
+                    logger.info(f"Unloading {entry.model_id} ({mode_str})")
                     del entry.llama
                 except Exception as e:
                     logger.warning(f"Error unloading {entry.model_id}: {e}")

@@ -11,6 +11,7 @@ print("--- [DIAGNOSTIC] core.main is being imported ---", file=sys.stderr, flush
 from core.database.engine import create_db_tables
 from core.routers.downloads import router as downloads_router
 from core.routers.chat import router as chat_router
+from core.routers.embeddings import router as embeddings_router
 
 # Configure a basic handler if none exists to ensure core logs appear
 if not logging.getLogger().handlers:
@@ -72,6 +73,7 @@ app.add_middleware(
 # Include routers
 app.include_router(downloads_router, prefix="/api/v1")
 app.include_router(chat_router)  # No prefix - router already has /v1
+app.include_router(embeddings_router)  # No prefix - router already has /v1
 
 
 @app.middleware("http")

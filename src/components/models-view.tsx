@@ -36,9 +36,9 @@ const RECOMMENDED_MODELS: RecommendedModel[] = [
     type: "language",
   },
   {
-    model_id: "unsloth/embeddinggemma-300m-GGUF",
-    quantization: "Q4_0",
-    label: "EmbeddingGemma 300M",
+    model_id: "ggml-org/bge-small-en-v1.5-Q8_0-GGUF",
+    quantization: "Q8_0",
+    label: "BGE Small",
     description: "Compact embedding model for semantic search and retrieval tasks.",
     type: "embedding",
   },
