@@ -14,4 +14,8 @@ dependencies = [
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
     "llama-cpp-python>=0.3.16",
+    "transformers>=5.3.0",
+    "torch>=2.10.0",
+    "gguf>=0.18.0",
+    "accelerate>=1.13.0",
 ]

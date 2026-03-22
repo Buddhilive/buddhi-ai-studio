@@ -229,7 +229,7 @@ def do_download(
                             entry.percentage = min(99, int(downloaded / total_size * 100))
 
             temp_path.rename(output_path)
-            local_path = str(output_path)
+            local_path = str(output_path.resolve())
             logger.info(f"Downloaded to: {local_path}")
 
         except httpx.HTTPStatusError as e:

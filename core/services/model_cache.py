@@ -7,7 +7,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from llama_cpp import Llama
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CacheEntry:
     """Entry in the model cache."""
-    llama: Llama
+    llama: Any
     lock: asyncio.Lock
     last_used: float
     model_id: str
@@ -70,14 +70,35 @@ class ModelCache:
                 f"(quantization={quantization}, n_ctx={n_ctx}, gpu_layers={n_gpu_layers}, mode={mode_str})"
             )
 
-            llama = Llama(
-                model_path=str(gguf_path),
-                n_ctx=n_ctx,
-                n_gpu_layers=n_gpu_layers,
-                n_threads=n_threads,
-                embedding=embedding,
-                verbose=False,
-            )
+            try:
+                llama = Llama(
+                    model_path=str(gguf_path),
+                    n_ctx=n_ctx,
+                    n_gpu_layers=n_gpu_layers,
+                    n_threads=n_threads,
+                    embedding=embedding,
+                    verbose=False,
+                )
+            except ValueError as e:
+                # llama-cpp-python raises ValueError("Failed to load model from file: <path>")
+                # when the architecture is unsupported. The "unknown model architecture" detail
+                # only appears in llama.cpp stderr, not in the Python exception message.
+                # Fall back to Transformers if the file exists but llama-cpp-python can't load it.
+                if "Failed to load model from file" not in str(e) or not Path(gguf_path).exists():
+                    raise
+                logger.warning(
+                    f"llama-cpp-python does not support architecture for {model_id} ({e}). "
+                    "Falling back to HuggingFace Transformers backend (slower, higher RAM usage)."
+                )
+                from core.services.transformers_backend import TransformersLlama
+                llama = TransformersLlama(
+                    model_path=str(gguf_path),
+                    model_id=model_id,
+                    n_ctx=n_ctx,
+                    n_gpu_layers=n_gpu_layers,
+                    n_threads=n_threads,
+                    embedding=embedding,
+                )
 
             logger.info(f"Successfully loaded {model_id} ({mode_str})")
 
