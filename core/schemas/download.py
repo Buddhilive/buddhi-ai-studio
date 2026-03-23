@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 class DownloadRequest(BaseModel):
     """Request to pull an Ollama model."""
 
-    model: str = Field(min_length=1, description="Ollama model name, e.g. 'qwen3.5:3b'")
+    model: str = Field(min_length=1, description="Ollama model name, e.g. 'qwen3.5:2b'")
 
 
 class ModelRecord(BaseModel):
