@@ -65,35 +65,15 @@ import {
 } from "@/components/ai-elements/sources";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
-import type { ToolUIPart } from "ai";
+import type { UIMessage } from "ai";
+import { DefaultChatTransport } from "ai";
+import { useChat } from "@ai-sdk/react";
 import { CheckIcon, GlobeIcon } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-interface MessageType {
-    key: string;
-    from: "user" | "assistant";
-    sources?: { href: string; title: string }[];
-    versions: {
-        id: string;
-        content: string;
-    }[];
-    reasoning?: {
-        content: string;
-        duration: number;
-    };
-    tools?: {
-        name: string;
-        description: string;
-        status: ToolUIPart["state"];
-        parameters: Record<string, unknown>;
-        result: string | undefined;
-        error: string | undefined;
-    }[];
-}
 
-const initialMessages: MessageType[] = [];
 
 const models = [
     {
@@ -144,19 +124,7 @@ const suggestions = [
     "Explain cloud computing basics",
 ];
 
-const mockResponses = [
-    "That's a great question! Let me help you understand this concept better. The key thing to remember is that proper implementation requires careful consideration of the underlying principles and best practices in the field.",
-    "I'd be happy to explain this topic in detail. From my understanding, there are several important factors to consider when approaching this problem. Let me break it down step by step for you.",
-    "This is an interesting topic that comes up frequently. The solution typically involves understanding the core concepts and applying them in the right context. Here's what I recommend...",
-    "Great choice of topic! This is something that many developers encounter. The approach I'd suggest is to start with the fundamentals and then build up to more complex scenarios.",
-    "That's definitely worth exploring. From what I can see, the best way to handle this is to consider both the theoretical aspects and practical implementation details.",
-];
 
-const delay = (ms: number): Promise<void> =>
-    // eslint-disable-next-line promise/avoid-new -- setTimeout requires a new Promise
-    new Promise((resolve) => {
-        setTimeout(resolve, ms);
-    });
 
 const chefs = ["OpenAI", "Anthropic", "Google"];
 
@@ -256,93 +224,16 @@ export default function ChatInterface() {
     const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
     const [text, setText] = useState<string>("");
     const [useWebSearch, setUseWebSearch] = useState<boolean>(false);
-    const [status, setStatus] = useState<
-        "submitted" | "streaming" | "ready" | "error"
-    >("ready");
-    const [messages, setMessages] = useState<MessageType[]>(initialMessages);
-    const [, setStreamingMessageId] = useState<string | null>(null);
+
+    const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
+    const { messages, status, stop, sendMessage } = useChat({ transport });
 
     const selectedModelData = useMemo(
         () => models.find((m) => m.id === model),
         [model]
     );
 
-    const updateMessageContent = useCallback(
-        (messageId: string, newContent: string) => {
-            setMessages((prev) =>
-                prev.map((msg) => {
-                    if (msg.versions.some((v) => v.id === messageId)) {
-                        return {
-                            ...msg,
-                            versions: msg.versions.map((v) =>
-                                v.id === messageId ? { ...v, content: newContent } : v
-                            ),
-                        };
-                    }
-                    return msg;
-                })
-            );
-        },
-        []
-    );
 
-    const streamResponse = useCallback(
-        async (messageId: string, content: string) => {
-            setStatus("streaming");
-            setStreamingMessageId(messageId);
-
-            const words = content.split(" ");
-            let currentContent = "";
-
-            for (const [i, word] of words.entries()) {
-                currentContent += (i > 0 ? " " : "") + word;
-                updateMessageContent(messageId, currentContent);
-                await delay(Math.random() * 100 + 50);
-            }
-
-            setStatus("ready");
-            setStreamingMessageId(null);
-        },
-        [updateMessageContent]
-    );
-
-    const addUserMessage = useCallback(
-        (content: string) => {
-            const userMessage: MessageType = {
-                from: "user",
-                key: `user-${Date.now()}`,
-                versions: [
-                    {
-                        content,
-                        id: `user-${Date.now()}`,
-                    },
-                ],
-            };
-
-            setMessages((prev) => [...prev, userMessage]);
-
-            setTimeout(() => {
-                const assistantMessageId = `assistant-${Date.now()}`;
-                const randomResponse =
-                    mockResponses[Math.floor(Math.random() * mockResponses.length)];
-
-                const assistantMessage: MessageType = {
-                    from: "assistant",
-                    key: `assistant-${Date.now()}`,
-                    versions: [
-                        {
-                            content: "",
-                            id: assistantMessageId,
-                        },
-                    ],
-                };
-
-                setMessages((prev) => [...prev, assistantMessage]);
-                streamResponse(assistantMessageId, randomResponse);
-            }, 500);
-        },
-        [streamResponse]
-    );
 
     const handleSubmit = useCallback(
         (message: PromptInputMessage) => {
@@ -353,26 +244,29 @@ export default function ChatInterface() {
                 return;
             }
 
-            setStatus("submitted");
-
             if (message.files?.length) {
                 toast.success("Files attached", {
                     description: `${message.files.length} file(s) attached to message`,
                 });
             }
 
-            addUserMessage(message.text || "Sent with attachments");
+            void sendMessage(
+                { text: message.text || "Sent with attachments" },
+                { body: { model, webSearch: useWebSearch } }
+            );
             setText("");
         },
-        [addUserMessage]
+        [sendMessage]
     );
 
     const handleSuggestionClick = useCallback(
         (suggestion: string) => {
-            setStatus("submitted");
-            addUserMessage(suggestion);
+            void sendMessage(
+                { text: suggestion },
+                { body: { model, webSearch: useWebSearch } }
+            );
         },
-        [addUserMessage]
+        [sendMessage]
     );
 
     const handleTranscriptionChange = useCallback((transcript: string) => {
@@ -404,53 +298,52 @@ export default function ChatInterface() {
         <div className="relative flex h-[calc(100vh-80px)] flex-col divide-y overflow-hidden">
             <Conversation>
                 <ConversationContent>
-                    {messages.map(({ versions, ...message }) => (
-                        <MessageBranch defaultBranch={0} key={message.key}>
-                            <MessageBranchContent>
-                                {versions.map((version) => (
+                    {messages.map((message) => {
+                        const sourceParts = message.parts?.filter((p) => p.type === "source-url") || [];
+                        const reasoningPart = message.parts?.find((p) => p.type === "reasoning");
+                        const textParts = message.parts?.filter((p) => p.type === "text") || [];
+
+                        return (
+                            <MessageBranch defaultBranch={0} key={message.id}>
+                                <MessageBranchContent>
                                     <Message
-                                        from={message.from}
-                                        key={`${message.key}-${version.id}`}
+                                        from={message.role === "user" ? "user" : "assistant"}
+                                        key={message.id}
                                     >
                                         <div>
-                                            {message.sources?.length && (
+                                            {sourceParts.length > 0 && (
                                                 <Sources>
-                                                    <SourcesTrigger count={message.sources.length} />
+                                                    <SourcesTrigger count={sourceParts.length} />
                                                     <SourcesContent>
-                                                        {message.sources.map((source) => (
+                                                        {sourceParts.map((source: any, idx) => (
                                                             <Source
-                                                                href={source.href}
-                                                                key={source.href}
-                                                                title={source.title}
+                                                                href={source.url}
+                                                                key={idx}
+                                                                title={source.title || source.url}
                                                             />
                                                         ))}
                                                     </SourcesContent>
                                                 </Sources>
                                             )}
-                                            {message.reasoning && (
-                                                <Reasoning duration={message.reasoning.duration}>
+                                            {reasoningPart && (
+                                                <Reasoning duration={(reasoningPart as any).duration ?? 0}>
                                                     <ReasoningTrigger />
                                                     <ReasoningContent>
-                                                        {message.reasoning.content}
+                                                        {(reasoningPart as any).text}
                                                     </ReasoningContent>
                                                 </Reasoning>
                                             )}
                                             <MessageContent>
-                                                <MessageResponse>{version.content}</MessageResponse>
+                                                {textParts.map((p: any, i) => (
+                                                    <MessageResponse key={i}>{p.text}</MessageResponse>
+                                                ))}
                                             </MessageContent>
                                         </div>
                                     </Message>
-                                ))}
-                            </MessageBranchContent>
-                            {versions.length > 1 && (
-                                <MessageBranchSelector>
-                                    <MessageBranchPrevious />
-                                    <MessageBranchPage />
-                                    <MessageBranchNext />
-                                </MessageBranchSelector>
-                            )}
-                        </MessageBranch>
-                    ))}
+                                </MessageBranchContent>
+                            </MessageBranch>
+                        );
+                    })}
                 </ConversationContent>
                 <ConversationScrollButton />
             </Conversation>
