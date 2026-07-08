@@ -77,38 +77,17 @@ import { toast } from "sonner";
 
 const models = [
     {
-        chef: "OpenAI",
-        chefSlug: "openai",
-        id: "gpt-4o",
-        name: "GPT-4o",
-        providers: ["openai", "azure"],
-    },
-    {
-        chef: "OpenAI",
-        chefSlug: "openai",
-        id: "gpt-4o-mini",
-        name: "GPT-4o Mini",
-        providers: ["openai", "azure"],
-    },
-    {
-        chef: "Anthropic",
-        chefSlug: "anthropic",
-        id: "claude-opus-4-20250514",
-        name: "Claude 4 Opus",
-        providers: ["anthropic", "azure", "google", "amazon-bedrock"],
-    },
-    {
-        chef: "Anthropic",
-        chefSlug: "anthropic",
-        id: "claude-sonnet-4-20250514",
-        name: "Claude 4 Sonnet",
-        providers: ["anthropic", "azure", "google", "amazon-bedrock"],
+        chef: "Google",
+        chefSlug: "google",
+        id: "gemma4-e2b",
+        name: "Gemma 4 E2B",
+        providers: ["google"],
     },
     {
         chef: "Google",
         chefSlug: "google",
-        id: "gemini-2.0-flash-exp",
-        name: "Gemini 2.0 Flash",
+        id: "gemma4-e4b",
+        name: "Gemma 4 E4B",
         providers: ["google"],
     },
 ];
@@ -126,7 +105,7 @@ const suggestions = [
 
 
 
-const chefs = ["OpenAI", "Anthropic", "Google"];
+const chefs = ["Google"];
 
 const AttachmentItem = ({
     attachment,
