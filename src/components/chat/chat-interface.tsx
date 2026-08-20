@@ -198,7 +198,17 @@ export default function ChatInterface() {
     const [useWebSearch, setUseWebSearch] = useState<boolean>(false);
 
     const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
-    const { messages, status, stop, sendMessage } = useChat({ transport });
+    const { messages, status, stop, sendMessage, clearError } = useChat({
+        transport,
+        onError: (err) => {
+            toast.error("Couldn't get a response", {
+                description:
+                    err.message ||
+                    "The model may not support image input, or the backend is unreachable.",
+            });
+            clearError();
+        },
+    });
 
     const selectedModelData = useMemo(
         () => models.find((m) => m.id === model),
@@ -216,14 +226,8 @@ export default function ChatInterface() {
                 return;
             }
 
-            if (message.files?.length) {
-                toast.success("Files attached", {
-                    description: `${message.files.length} file(s) attached to message`,
-                });
-            }
-
             void sendMessage(
-                { text: message.text || "Sent with attachments" },
+                { text: message.text, files: message.files },
                 { body: { model, webSearch: useWebSearch } }
             );
             setText("");
@@ -274,6 +278,7 @@ export default function ChatInterface() {
                         const sourceParts = message.parts?.filter((p) => p.type === "source-url") || [];
                         const reasoningPart = message.parts?.find((p) => p.type === "reasoning");
                         const textParts = message.parts?.filter((p) => p.type === "text") || [];
+                        const fileParts = message.parts?.filter((p) => p.type === "file") || [];
 
                         return (
                             <MessageBranch defaultBranch={0} key={message.id}>
@@ -283,6 +288,18 @@ export default function ChatInterface() {
                                         key={message.id}
                                     >
                                         <div>
+                                            {fileParts.length > 0 && (
+                                                <Attachments variant="inline">
+                                                    {fileParts.map((part: any, idx) => (
+                                                        <Attachment
+                                                            data={{ ...part, id: `${message.id}-file-${idx}` }}
+                                                            key={idx}
+                                                        >
+                                                            <AttachmentPreview />
+                                                        </Attachment>
+                                                    ))}
+                                                </Attachments>
+                                            )}
                                             {sourceParts.length > 0 && (
                                                 <Sources>
                                                     <SourcesTrigger count={sourceParts.length} />
@@ -330,7 +347,15 @@ export default function ChatInterface() {
                     ))}
                 </Suggestions>
                 <div className="w-full px-4 pb-4">
-                    <PromptInput globalDrop multiple onSubmit={handleSubmit}>
+                    <PromptInput
+                        accept="image/png,image/jpeg,image/bmp,image/gif"
+                        globalDrop
+                        maxFiles={4}
+                        maxFileSize={10 * 1024 * 1024}
+                        multiple
+                        onError={(err) => toast.error(err.message)}
+                        onSubmit={handleSubmit}
+                    >
                         <PromptInputHeader>
                             <PromptInputAttachmentsDisplay />
                         </PromptInputHeader>

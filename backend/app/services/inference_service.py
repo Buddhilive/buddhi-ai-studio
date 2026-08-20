@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import logging
+import re
 import threading
 from collections.abc import Mapping
 
-from litert_lm import Backend, Engine
+from litert_lm import Backend, Content, Contents, Engine
 
 from app.core.config import settings
 from app.schemas.chat import ChatCompletionChunkDelta, ChatMessage
@@ -47,6 +50,41 @@ def _extract_text(response: Mapping) -> str:
     )
 
 
+_DATA_URL_RE = re.compile(r"^data:[^;,]*;base64,(.*)$", re.DOTALL)
+
+
+def _decode_image_url(url: str) -> bytes:
+    match = _DATA_URL_RE.match(url)
+    if not match:
+        raise InferenceError(
+            "Image attachments must be base64 data URLs (data:<mime>;base64,<data>)."
+        )
+    try:
+        return base64.b64decode(match.group(1), validate=True)
+    except binascii.Error as exc:
+        raise InferenceError(f"Invalid base64 image data: {exc}") from exc
+
+
+def _content_to_engine_message(content: str | list) -> str | Contents:
+    """Converts a ChatMessage.content into what Conversation.send_message expects."""
+    if isinstance(content, str):
+        return content
+    parts: list = []
+    for part in content:
+        if part.type == "text":
+            parts.append(Content.Text(part.text))
+        elif part.type == "image_url":
+            parts.append(Content.ImageBytes(_decode_image_url(part.image_url.url)))
+    return Contents.of(*parts) if parts else Contents.empty()
+
+
+def _content_to_text(content: str | list) -> str:
+    """Flattens a ChatMessage.content to plain text (history replay, token counting)."""
+    if isinstance(content, str):
+        return content
+    return "".join(part.text for part in content if part.type == "text")
+
+
 class InferenceEngineManager:
     def __init__(self) -> None:
         self._engine: Engine | None = None
@@ -66,7 +104,9 @@ class InferenceEngineManager:
                 )
             backend_cls = _BACKENDS.get(settings.litert_backend, Backend.CPU)
             try:
-                self._engine = Engine(availability.path, backend=backend_cls())
+                self._engine = Engine(
+                    availability.path, backend=backend_cls(), vision_backend=backend_cls()
+                )
             except Exception as exc:  # pragma: no cover - depends on native runtime
                 raise InferenceError(f"Failed to load LiteRT-LM engine: {exc}") from exc
             return self._engine
@@ -85,13 +125,13 @@ class InferenceEngineManager:
         system_message: str | None = None
         rest = list(messages)
         if rest and rest[0].role == "system":
-            system_message = rest[0].content
+            system_message = _content_to_text(rest[0].content)
             rest = rest[1:]
         if not rest:
             raise InferenceError("At least one user message is required after the system message.")
         *history, last = rest
         history_dicts = [
-            {"role": _ROLE_TO_ENGINE[m.role], "content": m.content} for m in history
+            {"role": _ROLE_TO_ENGINE[m.role], "content": _content_to_text(m.content)} for m in history
         ]
         return system_message, history_dicts, last
 
@@ -115,7 +155,7 @@ class InferenceEngineManager:
         def _run() -> str:
             conversation, last_message = self._create_conversation(engine, messages)
             response = conversation.send_message(
-                last_message.content, max_output_tokens=effective_max_tokens
+                _content_to_engine_message(last_message.content), max_output_tokens=effective_max_tokens
             )
             return _extract_text(response)
 
@@ -127,7 +167,7 @@ class InferenceEngineManager:
             except Exception as exc:
                 raise InferenceError(f"Generation failed: {exc}") from exc
 
-        prompt_text = "\n".join(m.content for m in messages)
+        prompt_text = "\n".join(_content_to_text(m.content) for m in messages)
         prompt_tokens = self._token_count(engine, prompt_text)
         completion_tokens = self._token_count(engine, text)
         return text, prompt_tokens, completion_tokens
@@ -139,7 +179,7 @@ class InferenceEngineManager:
         def _make_iterator():
             conversation, last_message = self._create_conversation(engine, messages)
             return conversation.send_message_async(
-                last_message.content, max_output_tokens=effective_max_tokens
+                _content_to_engine_message(last_message.content), max_output_tokens=effective_max_tokens
             )
 
         async with self._generate_lock:

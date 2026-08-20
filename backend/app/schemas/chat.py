@@ -1,15 +1,32 @@
 import time
 import uuid
-from typing import Literal
+from typing import Literal, Union
 
 from pydantic import BaseModel, Field, field_validator
 
 Role = Literal["system", "user", "assistant"]
 
 
+class TextContentPart(BaseModel):
+    type: Literal["text"]
+    text: str
+
+
+class ImageUrl(BaseModel):
+    url: str
+
+
+class ImageContentPart(BaseModel):
+    type: Literal["image_url"]
+    image_url: ImageUrl
+
+
+ContentPart = Union[TextContentPart, ImageContentPart]
+
+
 class ChatMessage(BaseModel):
     role: Role
-    content: str
+    content: str | list[ContentPart]
 
 
 class ChatCompletionRequest(BaseModel):
