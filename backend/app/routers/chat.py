@@ -51,19 +51,21 @@ async def create_chat_completion(request: ChatCompletionRequest):
 
 async def _blocking_response(request: ChatCompletionRequest) -> ChatCompletionResponse:
     try:
-        text, prompt_tokens, completion_tokens = await inference_engine_manager.generate(
-            request.messages, request.max_tokens
+        text, reasoning, prompt_tokens, completion_tokens = await inference_engine_manager.generate(
+            request.messages, request.max_tokens, request.enable_thinking
         )
     except ModelNotAvailableError as exc:
         raise _openai_error(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc), "model_not_available") from exc
     except InferenceError as exc:
         raise _openai_error(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc), "server_error") from exc
 
+    content = f"<think>{reasoning}</think>{text}" if reasoning else text
+
     return ChatCompletionResponse(
         model=request.model,
         choices=[
             ChatCompletionChoice(
-                message=ChatMessage(role="assistant", content=text),
+                message=ChatMessage(role="assistant", content=content),
                 finish_reason="stop",
             )
         ],
@@ -80,14 +82,30 @@ async def _stream_response(request: ChatCompletionRequest) -> StreamingResponse:
         chunk_id = None
         try:
             first = True
-            async for delta in inference_engine_manager.generate_stream(request.messages, request.max_tokens):
+            in_thinking = False
+            async for delta in inference_engine_manager.generate_stream(
+                request.messages, request.max_tokens, request.enable_thinking
+            ):
+                piece = ""
+                if delta.reasoning:
+                    if not in_thinking:
+                        piece += "<think>"
+                        in_thinking = True
+                    piece += delta.reasoning
+                if delta.content:
+                    if in_thinking:
+                        piece += "</think>"
+                        in_thinking = False
+                    piece += delta.content
+                if not piece:
+                    continue
                 chunk = ChatCompletionChunk(
                     model=request.model,
                     choices=[
                         ChatCompletionChunkChoice(
                             delta=ChatCompletionChunkDelta(
                                 role="assistant" if first else None,
-                                content=delta.content,
+                                content=piece,
                             ),
                             finish_reason=None,
                         )
@@ -96,6 +114,19 @@ async def _stream_response(request: ChatCompletionRequest) -> StreamingResponse:
                 chunk_id = chunk_id or chunk.id
                 first = False
                 yield f"data: {chunk.model_dump_json()}\n\n"
+
+            if in_thinking:
+                closing_chunk = ChatCompletionChunk(
+                    id=chunk_id,
+                    model=request.model,
+                    choices=[
+                        ChatCompletionChunkChoice(
+                            delta=ChatCompletionChunkDelta(content="</think>"),
+                            finish_reason=None,
+                        )
+                    ],
+                )
+                yield f"data: {closing_chunk.model_dump_json()}\n\n"
 
             final_chunk = ChatCompletionChunk(
                 id=chunk_id or ChatCompletionChunk(model=request.model, choices=[]).id,

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation"
 
 import { NavMain } from "@/components/nav-main"
 import { NavProjects } from "@/components/nav-projects"
-import { NavUser } from "@/components/nav-user"
+/* import { NavUser } from "@/components/nav-user" */
 import { TeamSwitcher } from "@/components/team-switcher"
 import {
   Sidebar,
@@ -14,7 +14,7 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar"
-import { GalleryVerticalEndIcon, AudioLinesIcon, TerminalIcon, TerminalSquareIcon, BotIcon, BookOpenIcon, Settings2Icon, FrameIcon, PieChartIcon, MapIcon } from "lucide-react"
+import { TerminalIcon, TerminalSquareIcon, BotIcon, LayoutDashboardIcon } from "lucide-react"
 
 // This is sample data.
 const data = {
@@ -26,52 +26,27 @@ const data = {
   teams: [
     {
       name: "Acme Inc",
-      logo: (
-        <GalleryVerticalEndIcon
-        />
-      ),
+      logo: TerminalIcon,
       plan: "Enterprise",
-    },
-    {
-      name: "Acme Corp.",
-      logo: (
-        <AudioLinesIcon
-        />
-      ),
-      plan: "Startup",
-    },
-    {
-      name: "Evil Corp.",
-      logo: (
-        <TerminalIcon
-        />
-      ),
-      plan: "Free",
+      url: "/",
     },
   ],
   navMain: [
     {
+      title: "Dashboard",
+      url: "/",
+      icon: (
+        <LayoutDashboardIcon
+        />
+      ),
+    },
+    {
       title: "Playground",
-      url: "#",
+      url: "/chat",
       icon: (
         <TerminalSquareIcon
         />
       ),
-      isActive: true,
-      items: [
-        {
-          title: "History",
-          url: "#",
-        },
-        {
-          title: "Starred",
-          url: "#",
-        },
-        {
-          title: "Settings",
-          url: "#",
-        },
-      ],
     },
     {
       title: "Models",
@@ -82,110 +57,19 @@ const data = {
       ),
       items: [
         {
-          title: "Genesis",
-          url: "#",
-        },
-        {
-          title: "Explorer",
-          url: "#",
-        },
-        {
-          title: "Quantum",
-          url: "#",
-        },
-        {
           title: "Download Model",
           url: "/downloads",
         },
       ],
     },
-    {
-      title: "Documentation",
-      url: "#",
-      icon: (
-        <BookOpenIcon
-        />
-      ),
-      items: [
-        {
-          title: "Introduction",
-          url: "#",
-        },
-        {
-          title: "Get Started",
-          url: "#",
-        },
-        {
-          title: "Tutorials",
-          url: "#",
-        },
-        {
-          title: "Changelog",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Settings",
-      url: "#",
-      icon: (
-        <Settings2Icon
-        />
-      ),
-      items: [
-        {
-          title: "General",
-          url: "#",
-        },
-        {
-          title: "Team",
-          url: "#",
-        },
-        {
-          title: "Billing",
-          url: "#",
-        },
-        {
-          title: "Limits",
-          url: "#",
-        },
-      ],
-    },
   ],
-  projects: [
-    {
-      name: "Design Engineering",
-      url: "#",
-      icon: (
-        <FrameIcon
-        />
-      ),
-    },
-    {
-      name: "Sales & Marketing",
-      url: "#",
-      icon: (
-        <PieChartIcon
-        />
-      ),
-    },
-    {
-      name: "Travel",
-      url: "#",
-      icon: (
-        <MapIcon
-        />
-      ),
-    },
-  ],
-}
+};
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
   const navMain = data.navMain.map((item) => ({
     ...item,
-    isActive:
-      item.isActive || item.items?.some((sub) => sub.url !== "#" && pathname === sub.url),
+    isActive: item.items?.some((sub) => sub.url !== "#" && pathname === sub.url),
   }))
 
   return (
@@ -195,10 +79,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />
-        <NavProjects projects={data.projects} />
+        {/* <NavProjects projects={data.projects} /> */}
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        {/* <NavUser user={data.user} /> */}
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

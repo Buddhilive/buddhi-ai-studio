@@ -57,24 +57,15 @@ import {
     ReasoningContent,
     ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
-import {
-    Source,
-    Sources,
-    SourcesContent,
-    SourcesTrigger,
-} from "@/components/ai-elements/sources";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
-import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
+import { BrainIcon } from "lucide-react";
 import type { UIMessage } from "ai";
 import { DefaultChatTransport } from "ai";
 import { useChat } from "@ai-sdk/react";
-import { CheckIcon, GlobeIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-
-
-
 const models = [
     {
         chef: "Google",
@@ -84,19 +75,6 @@ const models = [
         providers: ["google"],
     },
 ];
-
-const suggestions = [
-    "What are the latest trends in AI?",
-    "How does machine learning work?",
-    "Explain quantum computing",
-    "Best practices for React development",
-    "Tell me about TypeScript benefits",
-    "How to optimize database queries?",
-    "What is the difference between SQL and NoSQL?",
-    "Explain cloud computing basics",
-];
-
-
 
 const chefs = ["Google"];
 
@@ -146,20 +124,6 @@ const PromptInputAttachmentsDisplay = () => {
     );
 };
 
-const SuggestionItem = ({
-    suggestion,
-    onClick,
-}: {
-    suggestion: string;
-    onClick: (suggestion: string) => void;
-}) => {
-    const handleClick = useCallback(() => {
-        onClick(suggestion);
-    }, [onClick, suggestion]);
-
-    return <Suggestion onClick={handleClick} suggestion={suggestion} />;
-};
-
 const ModelItem = ({
     m,
     isSelected,
@@ -195,7 +159,7 @@ export default function ChatInterface() {
     const [model, setModel] = useState<string>(models[0].id);
     const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
     const [text, setText] = useState<string>("");
-    const [useWebSearch, setUseWebSearch] = useState<boolean>(false);
+    const [showReasoning, setShowReasoning] = useState<boolean>(true);
 
     const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
     const { messages, status, stop, sendMessage, clearError } = useChat({
@@ -228,22 +192,13 @@ export default function ChatInterface() {
 
             void sendMessage(
                 { text: message.text, files: message.files },
-                { body: { model, webSearch: useWebSearch } }
+                { body: { model, enableThinking: showReasoning } }
             );
             setText("");
         },
-        [sendMessage]
+        [sendMessage, model, showReasoning]
     );
 
-    const handleSuggestionClick = useCallback(
-        (suggestion: string) => {
-            void sendMessage(
-                { text: suggestion },
-                { body: { model, webSearch: useWebSearch } }
-            );
-        },
-        [sendMessage]
-    );
 
     const handleTranscriptionChange = useCallback((transcript: string) => {
         setText((prev) => (prev ? `${prev} ${transcript}` : transcript));
@@ -256,8 +211,8 @@ export default function ChatInterface() {
         []
     );
 
-    const toggleWebSearch = useCallback(() => {
-        setUseWebSearch((prev) => !prev);
+    const toggleReasoning = useCallback(() => {
+        setShowReasoning((prev) => !prev);
     }, []);
 
     const handleModelSelect = useCallback((modelId: string) => {
@@ -275,10 +230,11 @@ export default function ChatInterface() {
             <Conversation>
                 <ConversationContent>
                     {messages.map((message) => {
-                        const sourceParts = message.parts?.filter((p) => p.type === "source-url") || [];
                         const reasoningPart = message.parts?.find((p) => p.type === "reasoning");
                         const textParts = message.parts?.filter((p) => p.type === "text") || [];
                         const fileParts = message.parts?.filter((p) => p.type === "file") || [];
+                        const isReasoningStreaming =
+                            (reasoningPart as any)?.state === "streaming";
 
                         return (
                             <MessageBranch defaultBranch={0} key={message.id}>
@@ -289,7 +245,7 @@ export default function ChatInterface() {
                                     >
                                         <div>
                                             {fileParts.length > 0 && (
-                                                <Attachments variant="inline">
+                                                <Attachments variant="grid" className="justify-end">
                                                     {fileParts.map((part: any, idx) => (
                                                         <Attachment
                                                             data={{ ...part, id: `${message.id}-file-${idx}` }}
@@ -300,22 +256,8 @@ export default function ChatInterface() {
                                                     ))}
                                                 </Attachments>
                                             )}
-                                            {sourceParts.length > 0 && (
-                                                <Sources>
-                                                    <SourcesTrigger count={sourceParts.length} />
-                                                    <SourcesContent>
-                                                        {sourceParts.map((source: any, idx) => (
-                                                            <Source
-                                                                href={source.url}
-                                                                key={idx}
-                                                                title={source.title || source.url}
-                                                            />
-                                                        ))}
-                                                    </SourcesContent>
-                                                </Sources>
-                                            )}
-                                            {reasoningPart && (
-                                                <Reasoning duration={(reasoningPart as any).duration ?? 0}>
+                                            {reasoningPart && showReasoning && (
+                                                <Reasoning isStreaming={isReasoningStreaming}>
                                                     <ReasoningTrigger />
                                                     <ReasoningContent>
                                                         {(reasoningPart as any).text}
@@ -337,15 +279,6 @@ export default function ChatInterface() {
                 <ConversationScrollButton />
             </Conversation>
             <div className="grid shrink-0 gap-4 pt-4">
-                <Suggestions className="px-4">
-                    {suggestions.map((suggestion) => (
-                        <SuggestionItem
-                            key={suggestion}
-                            onClick={handleSuggestionClick}
-                            suggestion={suggestion}
-                        />
-                    ))}
-                </Suggestions>
                 <div className="w-full px-4 pb-4">
                     <PromptInput
                         accept="image/png,image/jpeg,image/bmp,image/gif"
@@ -377,11 +310,11 @@ export default function ChatInterface() {
                                     variant="ghost"
                                 />
                                 <PromptInputButton
-                                    onClick={toggleWebSearch}
-                                    variant={useWebSearch ? "default" : "ghost"}
+                                    onClick={toggleReasoning}
+                                    variant={showReasoning ? "default" : "ghost"}
                                 >
-                                    <GlobeIcon size={16} />
-                                    <span>Search</span>
+                                    <BrainIcon size={16} />
+                                    <span>Reasoning</span>
                                 </PromptInputButton>
                                 <ModelSelector
                                     onOpenChange={setModelSelectorOpen}

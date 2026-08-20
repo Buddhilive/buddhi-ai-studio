@@ -41,6 +41,7 @@ class ChatCompletionRequest(BaseModel):
     presence_penalty: float = 0.0
     frequency_penalty: float = 0.0
     user: str | None = None
+    enable_thinking: bool = False
 
     @field_validator("messages")
     @classmethod
@@ -81,6 +82,7 @@ class ChatCompletionResponse(BaseModel):
 class ChatCompletionChunkDelta(BaseModel):
     role: Role | None = None
     content: str | None = None
+    reasoning: str | None = None
 
 
 class ChatCompletionChunkChoice(BaseModel):

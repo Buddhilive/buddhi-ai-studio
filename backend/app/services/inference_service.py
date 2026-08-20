@@ -8,7 +8,7 @@ import re
 import threading
 from collections.abc import Mapping
 
-from litert_lm import Backend, Content, Contents, Engine
+from litert_lm import Backend, Content, Contents, Engine, ThinkingConfig
 
 from app.core.config import settings
 from app.schemas.chat import ChatCompletionChunkDelta, ChatMessage
@@ -48,6 +48,40 @@ def _extract_text(response: Mapping) -> str:
         for part in parts
         if isinstance(part, dict) and part.get("type") == "text"
     )
+
+
+def _extract_reasoning(response: Mapping) -> str:
+    reasoning_content = response.get("reasoning_content")
+    if isinstance(reasoning_content, str) and reasoning_content:
+        return reasoning_content
+    channels = response.get("channels")
+    if isinstance(channels, dict):
+        for key in ("thought", "thinking", "reasoning"):
+            value = channels.get(key)
+            if isinstance(value, str) and value:
+                return value
+    parts = response.get("content", [])
+    if isinstance(parts, list):
+        return "".join(
+            part.get("text", "")
+            for part in parts
+            if isinstance(part, dict) and part.get("type") in ("thinking", "reasoning")
+        )
+    return ""
+
+
+_STREAM_DONE = object()
+
+
+def _next_or_sentinel(it):
+    # StopIteration can't cross a thread-pool Future boundary (PEP 479):
+    # asyncio.to_thread(next, it) turns it into an opaque RuntimeError
+    # ("StopIteration ... cannot be raised into a Future"). Catch it here,
+    # inside the worker thread, and signal exhaustion with a sentinel instead.
+    try:
+        return next(it)
+    except StopIteration:
+        return _STREAM_DONE
 
 
 _DATA_URL_RE = re.compile(r"^data:[^;,]*;base64,(.*)$", re.DOTALL)
@@ -135,10 +169,15 @@ class InferenceEngineManager:
         ]
         return system_message, history_dicts, last
 
-    def _create_conversation(self, engine: Engine, messages: list[ChatMessage]):
+    def _create_conversation(
+        self, engine: Engine, messages: list[ChatMessage], enable_thinking: bool = False
+    ):
         system_message, history, last = self._split_history(messages)
+        thinking_config = ThinkingConfig(enable_thinking=True) if enable_thinking else None
         conversation = engine.create_conversation(
-            messages=history or None, system_message=system_message
+            messages=history or None,
+            system_message=system_message,
+            thinking_config=thinking_config,
         )
         return conversation, last
 
@@ -148,20 +187,27 @@ class InferenceEngineManager:
         except Exception:  # pragma: no cover - defensive fallback
             return max(1, len(text.split()))
 
-    async def generate(self, messages: list[ChatMessage], max_tokens: int | None) -> tuple[str, int, int]:
+    async def generate(
+        self,
+        messages: list[ChatMessage],
+        max_tokens: int | None,
+        enable_thinking: bool = False,
+    ) -> tuple[str, str, int, int]:
         engine = self._load_engine()
         effective_max_tokens = max_tokens or settings.chat_max_tokens_default
 
-        def _run() -> str:
-            conversation, last_message = self._create_conversation(engine, messages)
+        def _run() -> tuple[str, str]:
+            conversation, last_message = self._create_conversation(
+                engine, messages, enable_thinking
+            )
             response = conversation.send_message(
                 _content_to_engine_message(last_message.content), max_output_tokens=effective_max_tokens
             )
-            return _extract_text(response)
+            return _extract_text(response), _extract_reasoning(response)
 
         async with self._generate_lock:
             try:
-                text = await asyncio.to_thread(_run)
+                text, reasoning = await asyncio.to_thread(_run)
             except (ModelNotAvailableError, InferenceError):
                 raise
             except Exception as exc:
@@ -170,14 +216,21 @@ class InferenceEngineManager:
         prompt_text = "\n".join(_content_to_text(m.content) for m in messages)
         prompt_tokens = self._token_count(engine, prompt_text)
         completion_tokens = self._token_count(engine, text)
-        return text, prompt_tokens, completion_tokens
+        return text, reasoning, prompt_tokens, completion_tokens
 
-    async def generate_stream(self, messages: list[ChatMessage], max_tokens: int | None):
+    async def generate_stream(
+        self,
+        messages: list[ChatMessage],
+        max_tokens: int | None,
+        enable_thinking: bool = False,
+    ):
         engine = self._load_engine()
         effective_max_tokens = max_tokens or settings.chat_max_tokens_default
 
         def _make_iterator():
-            conversation, last_message = self._create_conversation(engine, messages)
+            conversation, last_message = self._create_conversation(
+                engine, messages, enable_thinking
+            )
             return conversation.send_message_async(
                 _content_to_engine_message(last_message.content), max_output_tokens=effective_max_tokens
             )
@@ -187,13 +240,15 @@ class InferenceEngineManager:
                 iterator = await asyncio.to_thread(_make_iterator)
                 sync_iterator = iter(iterator)
                 while True:
-                    try:
-                        chunk = await asyncio.to_thread(next, sync_iterator)
-                    except StopIteration:
+                    chunk = await asyncio.to_thread(_next_or_sentinel, sync_iterator)
+                    if chunk is _STREAM_DONE:
                         break
                     text = _extract_text(chunk)
-                    if text:
-                        yield ChatCompletionChunkDelta(content=text)
+                    reasoning = _extract_reasoning(chunk)
+                    if text or reasoning:
+                        yield ChatCompletionChunkDelta(
+                            content=text or None, reasoning=reasoning or None
+                        )
             except (ModelNotAvailableError, InferenceError):
                 raise
             except Exception as exc:
