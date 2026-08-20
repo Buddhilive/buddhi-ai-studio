@@ -17,7 +17,7 @@ import {
 import { TerminalIcon, TerminalSquareIcon, BotIcon, LayoutDashboardIcon } from "lucide-react"
 
 // This is sample data.
-const data = {
+export const navData = {
   user: {
     name: "shadcn",
     email: "m@example.com",
@@ -67,7 +67,7 @@ const data = {
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
-  const navMain = data.navMain.map((item) => ({
+  const navMain = navData.navMain.map((item) => ({
     ...item,
     isActive: item.items?.some((sub) => sub.url !== "#" && pathname === sub.url),
   }))
@@ -75,7 +75,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <TeamSwitcher teams={navData.teams} />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />
