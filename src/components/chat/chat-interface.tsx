@@ -79,13 +79,6 @@ const models = [
     {
         chef: "Google",
         chefSlug: "google",
-        id: "gemma4-e2b",
-        name: "Gemma 4 E2B",
-        providers: ["google"],
-    },
-    {
-        chef: "Google",
-        chefSlug: "google",
         id: "gemma4-e4b",
         name: "Gemma 4 E4B",
         providers: ["google"],

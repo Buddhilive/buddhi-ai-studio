@@ -10,9 +10,14 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
 
     models_dir: Path = BACKEND_ROOT / "models" / "static"
-    hf_model_repo_id: str = "litert-community/gemma-4-E2B-it-litert-lm"
-    hf_model_filename: str = "gemma-4-E2B-it.litertlm"
+    hf_model_repo_id: str = "litert-community/gemma-4-E4B-it-litert-lm"
+    hf_model_filename: str = "gemma-4-E4B-it.litertlm"
     hf_token: str | None = None
+
+    litert_backend: str = "cpu"
+    chat_model_id: str = "gemma-4-e4b"
+    chat_max_tokens_default: int = 1024
+    chat_request_timeout_s: int = 120
 
 
 settings = Settings()

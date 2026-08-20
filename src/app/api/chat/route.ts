@@ -15,17 +15,19 @@ export async function POST(req: Request) {
         webSearch: boolean;
     } = await req.json();
 
-    // Validate model (fallback to gemma4-e2b if not recognized)
-    const validModels = ["gemma4-e2b", "gemma4-e4b"];
-    const selectedModel = validModels.includes(model) ? model : "gemma4-e2b";
+    // Only Gemma 4 E4B is served by the backend today
+    const backendModelIds: Record<string, string> = { "gemma4-e4b": "gemma-4-e4b" };
+    const validModels = Object.keys(backendModelIds);
+    const selectedModel = validModels.includes(model) ? model : "gemma4-e4b";
 
     // TODO: wire up webSearch
     // if (webSearch) { ... }
 
+    const backendUrl = process.env.BACKEND_API_URL ?? "http://localhost:8000";
     const buddhiAIModel = createOpenAI({
-        baseURL: "http://localhost:9379/v1/",
+        baseURL: `${backendUrl}/v1/`,
         apiKey: "",
-    }).chat(selectedModel);
+    }).chat(backendModelIds[selectedModel]);
 
     const result = streamText({
         model: buddhiAIModel,
