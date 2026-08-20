@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { usePathname } from "next/navigation"
 
 import { NavMain } from "@/components/nav-main"
 import { NavProjects } from "@/components/nav-projects"
@@ -92,6 +93,10 @@ const data = {
           title: "Quantum",
           url: "#",
         },
+        {
+          title: "Download Model",
+          url: "/downloads",
+        },
       ],
     },
     {
@@ -176,13 +181,20 @@ const data = {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const pathname = usePathname()
+  const navMain = data.navMain.map((item) => ({
+    ...item,
+    isActive:
+      item.isActive || item.items?.some((sub) => sub.url !== "#" && pathname === sub.url),
+  }))
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <TeamSwitcher teams={data.teams} />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
+        <NavMain items={navMain} />
         <NavProjects projects={data.projects} />
       </SidebarContent>
       <SidebarFooter>

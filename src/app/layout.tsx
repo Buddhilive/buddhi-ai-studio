@@ -19,6 +19,7 @@ import {
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { ModeToggle } from "@/components/custom/toggle-mode";
+import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -85,6 +86,7 @@ export default function RootLayout({
             </SidebarInset>
           </SidebarProvider>
         </ThemeProvider>
+        <Toaster />
       </body>
     </html>
   );
