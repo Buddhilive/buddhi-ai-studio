@@ -70,6 +70,18 @@ class MetricsWriter:
         self._cleanup_task: asyncio.Task | None = None
         self.dropped_events = 0
 
+    def cursor(self) -> "duckdb.DuckDBPyConnection | None":
+        """A fresh cursor on the writer's connection, for read-only queries.
+
+        DuckDB refuses a second connection to the same file with different
+        config (e.g. read_only=True) while a read-write connection is open in
+        this process, so readers must share the writer's connection via
+        cursors rather than opening their own.
+        """
+        if self._conn is None:
+            return None
+        return self._conn.cursor()
+
     async def start(self) -> None:
         settings.metrics_db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = duckdb.connect(str(settings.metrics_db_path))

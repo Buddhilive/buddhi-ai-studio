@@ -14,7 +14,13 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar"
-import { TerminalIcon, TerminalSquareIcon, BotIcon, LayoutDashboardIcon } from "lucide-react"
+import {
+  TerminalIcon,
+  TerminalSquareIcon,
+  BotIcon,
+  LayoutDashboardIcon,
+  ChartColumnIcon,
+} from "lucide-react"
 
 // This is sample data.
 export const navData = {
@@ -39,6 +45,40 @@ export const navData = {
         <LayoutDashboardIcon
         />
       ),
+    },
+    {
+      title: "Analytics",
+      url: "/analytics",
+      icon: (
+        <ChartColumnIcon
+        />
+      ),
+      items: [
+        {
+          title: "Overview",
+          url: "/analytics",
+        },
+        {
+          title: "Requests",
+          url: "/analytics/requests",
+        },
+        {
+          title: "Tokens",
+          url: "/analytics/tokens",
+        },
+        {
+          title: "Latency",
+          url: "/analytics/latency",
+        },
+        {
+          title: "Errors",
+          url: "/analytics/errors",
+        },
+        {
+          title: "Traces",
+          url: "/analytics/traces",
+        },
+      ],
     },
     {
       title: "Playground",
