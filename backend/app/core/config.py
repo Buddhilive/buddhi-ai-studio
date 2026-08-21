@@ -1,11 +1,17 @@
 from pathlib import Path
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=str(BACKEND_ROOT.parent / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     app_name: str = "Buddhi AI Studio Backend"
     cors_origins: list[str] = ["http://localhost:3000"]
 
@@ -21,7 +27,7 @@ class Settings(BaseSettings):
     embedding_max_batch_size: int = 32
 
     metrics_db_path: Path = BACKEND_ROOT / "data" / "metrics.duckdb"
-    enable_trace_logging: bool = False
+    enable_trace_logging: bool = True
     trace_retention_days: int = 30
     metrics_queue_size: int = 1000
     metrics_batch_size: int = 50

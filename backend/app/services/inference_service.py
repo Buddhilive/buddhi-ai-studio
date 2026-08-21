@@ -234,7 +234,9 @@ class InferenceEngineManager:
 
         prompt_text = "\n".join(_content_to_text(m.content) for m in messages)
         prompt_tokens = self._token_count(engine, prompt_text)
-        completion_tokens = self._token_count(engine, text)
+        completion_tokens = self._token_count(engine, text) + (
+            self._token_count(engine, reasoning) if reasoning else 0
+        )
         return text, reasoning, prompt_tokens, completion_tokens
 
     async def generate_stream(
