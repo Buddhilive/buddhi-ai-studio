@@ -117,24 +117,36 @@ export default function SettingsPage() {
               </Badge>
             </CardAction>
           </CardHeader>
-          <CardContent>
-            <Input
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="hf_..."
-              type="password"
-              value={token}
-            />
-          </CardContent>
-          <CardFooter className="gap-2">
-            <Button disabled={isSaving} onClick={() => void handleSave()}>
-              Save
-            </Button>
-            {configured && (
-              <Button disabled={isSaving} onClick={() => void handleClear()} variant="outline">
-                Clear
-              </Button>
-            )}
-          </CardFooter>
+          {configured ? (
+            <>
+              <CardContent>
+                <p className="text-muted-foreground text-sm">
+                  A Hugging Face token is configured.
+                </p>
+              </CardContent>
+              <CardFooter className="gap-2">
+                <Button disabled={isSaving} onClick={() => void handleClear()} variant="outline">
+                  Clear
+                </Button>
+              </CardFooter>
+            </>
+          ) : (
+            <>
+              <CardContent>
+                <Input
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="hf_..."
+                  type="password"
+                  value={token}
+                />
+              </CardContent>
+              <CardFooter className="gap-2">
+                <Button disabled={isSaving} onClick={() => void handleSave()}>
+                  Save
+                </Button>
+              </CardFooter>
+            </>
+          )}
         </Card>
       )}
     </div>
