@@ -3,11 +3,12 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, status
 from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
 from app.core.model_catalog import ModelCategory, get_catalog_entry
+from app.core.openai_errors import openai_error as _openai_error
 from app.services.model_download_service import model_download_manager
 from app.schemas.chat import (
     ChatCompletionChoice,
@@ -32,13 +33,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["chat"])
 
 _ENDPOINT = "/v1/chat/completions"
-
-
-def _openai_error(status_code: int, message: str, error_type: str, param: str | None = None) -> HTTPException:
-    return HTTPException(
-        status_code=status_code,
-        detail={"error": {"message": message, "type": error_type, "param": param, "code": None}},
-    )
 
 
 def _validate_model(request: ChatCompletionRequest) -> None:

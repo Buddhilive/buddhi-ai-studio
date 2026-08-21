@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     chat_max_tokens_default: int = 1024
     chat_request_timeout_s: int = 120
 
+    embedding_model_id: str = "embeddinggemma-300m"
+    embedding_model_repo_id: str = "google/embeddinggemma-300m"
+    embedding_cache_dir: Path = BACKEND_ROOT / "models" / "embeddings"
+    embedding_device: str = "cpu"
+    embedding_max_batch_size: int = 32
+
     metrics_db_path: Path = BACKEND_ROOT / "data" / "metrics.duckdb"
     enable_trace_logging: bool = False
     trace_retention_days: int = 30

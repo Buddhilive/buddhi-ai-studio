@@ -7,8 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.routers import analytics, chat, health, models, settings as settings_router
+from app.routers import analytics, chat, embeddings, health, models, settings as settings_router
 from app.routers import metrics as metrics_router
+from app.services.embedding_service import embedding_engine_manager
 from app.services.inference_service import inference_engine_manager
 from app.services.metrics import metrics_writer
 from app.services.model_download_service import model_download_manager
@@ -18,6 +19,7 @@ from app.services.model_download_service import model_download_manager
 async def lifespan(app: FastAPI):
     model_download_manager.scan_on_startup()
     inference_engine_manager.warm_up()
+    embedding_engine_manager.warm_up()
     await metrics_writer.start()
     yield
     await metrics_writer.stop()
@@ -38,6 +40,7 @@ app.include_router(analytics.router)
 app.include_router(models.router)
 app.include_router(settings_router.router)
 app.include_router(chat.router)
+app.include_router(embeddings.router)
 if settings.enable_prometheus_metrics:
     app.include_router(metrics_router.router)
 

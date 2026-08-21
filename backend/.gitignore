@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 .env
 models/static/
+models/embeddings/
 data/
