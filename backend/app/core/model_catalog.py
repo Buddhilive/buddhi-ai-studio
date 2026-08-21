@@ -60,14 +60,6 @@ MODEL_CATALOG: list[ModelCatalogEntry] = [
         filename="gemma3-1b-it-int4.litertlm",
         size_bytes=584_000_000,
     ),
-    ModelCatalogEntry(
-        id="embeddinggemma-300m",
-        category=ModelCategory.EMBEDDING,
-        name="EmbeddingGemma 300M",
-        repo_id="litert-community/embeddinggemma-300m",
-        filename="embeddinggemma-300M_seq256_mixed-precision.tflite",
-        size_bytes=179_000_000,
-    ),
 ]
 
 _CATALOG_BY_ID: dict[str, ModelCatalogEntry] = {entry.id: entry for entry in MODEL_CATALOG}

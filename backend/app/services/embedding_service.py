@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
+from enum import Enum
 
 from sentence_transformers import SentenceTransformer
 
@@ -18,6 +20,13 @@ class EmbeddingInferenceError(RuntimeError):
     """Raised when the Sentence Transformers model fails to encode input."""
 
 
+class EmbeddingStatus(str, Enum):
+    NOT_DOWNLOADED = "not_downloaded"
+    DOWNLOADING = "downloading"
+    READY = "ready"
+    ERROR = "error"
+
+
 class EmbeddingEngineManager:
     """Lazily loads and caches a single Sentence Transformers model.
 
@@ -25,11 +34,19 @@ class EmbeddingEngineManager:
     model is a different runtime with its own dependency stack, and
     Sentence Transformers manages its own multi-file HF repo download/cache
     rather than going through the app's single-file model download manager.
+    Unlike that manager, it can't report byte-level progress, so status here
+    is coarse: not_downloaded -> downloading -> ready (or error).
     """
 
     def __init__(self) -> None:
         self._model: SentenceTransformer | None = None
         self._load_lock = threading.Lock()
+        self._status = EmbeddingStatus.NOT_DOWNLOADED
+        self._error: str | None = None
+        self._download_task: asyncio.Task | None = None
+
+    def get_status(self) -> tuple[EmbeddingStatus, str | None]:
+        return self._status, self._error
 
     def _load_model(self) -> SentenceTransformer:
         if self._model is not None:
@@ -37,6 +54,8 @@ class EmbeddingEngineManager:
         with self._load_lock:
             if self._model is not None:
                 return self._model
+            self._status = EmbeddingStatus.DOWNLOADING
+            self._error = None
             settings.embedding_cache_dir.mkdir(parents=True, exist_ok=True)
             try:
                 self._model = SentenceTransformer(
@@ -45,9 +64,12 @@ class EmbeddingEngineManager:
                     device=settings.embedding_device,
                 )
             except Exception as exc:
+                self._status = EmbeddingStatus.ERROR
+                self._error = str(exc)
                 raise EmbeddingModelNotAvailableError(
                     f"Embedding model '{settings.embedding_model_repo_id}' could not be loaded: {exc}"
                 ) from exc
+            self._status = EmbeddingStatus.READY
             return self._model
 
     def warm_up(self) -> None:
@@ -55,6 +77,24 @@ class EmbeddingEngineManager:
             self._load_model()
         except EmbeddingModelNotAvailableError as exc:
             logger.warning("Embedding engine warm-up failed: %s", exc)
+
+    def trigger_download(self) -> EmbeddingStatus:
+        """Kicks off a background load if one isn't already in flight or done.
+
+        Returns the status immediately (does not wait for the load to finish)
+        so the calling HTTP request doesn't block on a multi-GB download.
+        """
+        if self._status in (EmbeddingStatus.DOWNLOADING, EmbeddingStatus.READY):
+            return self._status
+        self._status = EmbeddingStatus.DOWNLOADING
+        self._download_task = asyncio.create_task(asyncio.to_thread(self._background_load))
+        return self._status
+
+    def _background_load(self) -> None:
+        try:
+            self._load_model()
+        except EmbeddingModelNotAvailableError:
+            pass  # status/error already recorded inside _load_model
 
     def encode(self, texts: list[str], dimensions: int | None = None) -> tuple[list[list[float]], int]:
         model = self._load_model()

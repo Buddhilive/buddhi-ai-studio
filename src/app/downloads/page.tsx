@@ -7,6 +7,7 @@ import {
   type DownloadStatus,
   type ModelCatalogEntry,
 } from "@/hooks/use-model-catalog";
+import { useEmbeddingModelStatus } from "@/hooks/use-embedding-model-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,7 @@ import {
   CheckCircle2Icon,
   DownloadIcon,
   KeyIcon,
+  Loader2Icon,
   PauseIcon,
   PlayIcon,
   XIcon,
@@ -171,12 +173,85 @@ function ModelCard({
   );
 }
 
+const EMBEDDING_STATUS_LABEL: Record<
+  ReturnType<typeof useEmbeddingModelStatus>["status"],
+  string
+> = {
+  not_downloaded: "Not downloaded",
+  downloading: "Downloading",
+  ready: "Downloaded",
+  error: "Failed",
+};
+
+const EMBEDDING_STATUS_VARIANT: Record<
+  ReturnType<typeof useEmbeddingModelStatus>["status"],
+  "default" | "secondary" | "destructive" | "outline"
+> = {
+  not_downloaded: "secondary",
+  downloading: "default",
+  ready: "default",
+  error: "destructive",
+};
+
+function EmbeddingModelCard({ tokenConfigured }: { tokenConfigured: boolean }) {
+  const { modelId, repoId, status, error, startDownload } = useEmbeddingModelStatus();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{modelId ?? "EmbeddingGemma 300M"}</CardTitle>
+        <CardDescription className="font-mono">
+          {repoId ?? "google/embeddinggemma-300m"}
+        </CardDescription>
+        <CardAction>
+          <Badge variant={EMBEDDING_STATUS_VARIANT[status]}>
+            {EMBEDDING_STATUS_LABEL[status]}
+          </Badge>
+        </CardAction>
+      </CardHeader>
+
+      <CardContent className="flex flex-col gap-4">
+        {status === "ready" && (
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
+            <CheckCircle2Icon className="text-primary size-4" />
+            Model downloaded and ready
+          </div>
+        )}
+
+        {status === "downloading" && (
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
+            <Loader2Icon className="size-4 animate-spin" />
+            Downloading model files (this can take a while, no byte-level progress
+            available)...
+          </div>
+        )}
+
+        {status === "error" && error && (
+          <Alert variant="destructive">
+            <AlertTriangleIcon />
+            <AlertTitle>Download failed</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+
+      <CardFooter className="gap-2">
+        {(status === "not_downloaded" || status === "error") && (
+          <Button disabled={!tokenConfigured} onClick={() => void startDownload()}>
+            <DownloadIcon />
+            Download
+          </Button>
+        )}
+      </CardFooter>
+    </Card>
+  );
+}
+
 export default function DownloadsPage() {
   const { catalog, states, isLoading, error, start, pause, resume, cancel } = useModelCatalog();
   const { configured: tokenConfigured } = useHfTokenStatus();
 
   const llmModels = catalog.filter((m) => m.category === "llm");
-  const embeddingModels = catalog.filter((m) => m.category === "embedding");
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 md:p-6">
@@ -241,18 +316,7 @@ export default function DownloadsPage() {
             ))}
           </TabsContent>
           <TabsContent value="embedding" className="flex flex-col gap-4">
-            {embeddingModels.map((entry) => (
-              <ModelCard
-                key={entry.id}
-                entry={entry}
-                tokenConfigured={tokenConfigured ?? false}
-                state={states[entry.id]}
-                onStart={() => void start(entry.id)}
-                onPause={() => void pause(entry.id)}
-                onResume={() => void resume(entry.id)}
-                onCancel={() => void cancel(entry.id)}
-              />
-            ))}
+            <EmbeddingModelCard tokenConfigured={tokenConfigured ?? false} />
           </TabsContent>
         </Tabs>
       )}
