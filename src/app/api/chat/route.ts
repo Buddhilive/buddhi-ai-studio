@@ -15,10 +15,7 @@ export async function POST(req: Request) {
         enableThinking?: boolean;
     } = await req.json();
 
-    // Only Gemma 4 E4B is served by the backend today
-    const backendModelIds: Record<string, string> = { "gemma4-e4b": "gemma-4-e4b" };
-    const validModels = Object.keys(backendModelIds);
-    const selectedModel = validModels.includes(model) ? model : "gemma4-e4b";
+    const selectedModel = model || "gemma-4-e4b";
 
     const backendUrl = process.env.BACKEND_API_URL ?? "http://localhost:8000";
     const buddhiAIModel = wrapLanguageModel({
@@ -35,7 +32,7 @@ export async function POST(req: Request) {
                 }
                 return fetch(input, init);
             },
-        }).chat(backendModelIds[selectedModel]),
+        }).chat(selectedModel),
         // The backend has no reasoning field the OpenAI Chat Completions
         // client understands, so it wraps reasoning in <think> tags inline
         // in the text stream; this splits it back into a reasoning part.

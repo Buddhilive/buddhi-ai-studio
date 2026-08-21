@@ -20,6 +20,7 @@ import {
   BotIcon,
   LayoutDashboardIcon,
   ChartColumnIcon,
+  SettingsIcon,
 } from "lucide-react"
 
 // This is sample data.
@@ -31,9 +32,9 @@ export const navData = {
   },
   teams: [
     {
-      name: "Acme Inc",
+      name: "Buddhi AI Studio",
       logo: TerminalIcon,
-      plan: "Enterprise",
+      plan: "Desktop Inference Server",
       url: "/",
     },
   ],
@@ -85,6 +86,14 @@ export const navData = {
           url: "/downloads",
         },
       ],
+    },
+    {
+      title: "Settings",
+      url: "/settings",
+      icon: (
+        <SettingsIcon
+        />
+      ),
     },
   ],
 };
