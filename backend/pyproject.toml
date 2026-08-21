@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
+    "duckdb>=1.5.5",
     "fastapi[standard]>=0.141.1",
+    "huggingface-hub>=0.26.0",
+    "litert-lm-api>=0.1.0",
+    "prometheus-client>=0.26.0",
     "pydantic-settings>=2.15.0",
+    "sentence-transformers>=3.3.0",
     "uvicorn>=0.52.4",
 ]

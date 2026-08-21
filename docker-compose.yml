@@ -1,0 +1,26 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "87654:8000"
+    volumes:
+      - ./backend/data:/app/data
+      - ./backend/models:/app/models
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      CORS_ORIGINS: '["http://localhost:54321"]'
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "54321:3000"
+    environment:
+      BACKEND_API_URL: http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
