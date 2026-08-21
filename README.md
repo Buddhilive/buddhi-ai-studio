@@ -1,6 +1,6 @@
 # Buddhi AI Studio
 
-Buddhi AI Studio is a self-hosted personal AI agent studio: a Next.js frontend paired with a FastAPI backend for running local LLMs (via LiteRT), managing embedding models, chatting with your models, downloading/managing model files, and tracking usage through an analytics dashboard. Everything runs on your own machine — no external API keys required, though you can optionally supply a Hugging Face token to pull gated/private models.
+Buddhi AI Studio is primarily an LLM inferencing service for desktops, targeting CPU-based inference — no GPU required. A Next.js frontend pairs with a FastAPI backend to run local LLMs (via LiteRT) directly on your machine's CPU, alongside local embedding models, a chat UI, model download/management, and a usage analytics dashboard. No external API keys required, though you can optionally supply a Hugging Face token to pull gated/private models.
 
 ## Tech Stack
 
@@ -12,7 +12,7 @@ Buddhi AI Studio is a self-hosted personal AI agent studio: a Next.js frontend p
 **Backend**
 - FastAPI (Python 3.12+)
 - `uv` for dependency management
-- Local LLM inference via LiteRT, local embeddings via `sentence-transformers`
+- Local LLM inference via LiteRT (CPU-targeted), local embeddings via `sentence-transformers`
 - DuckDB-backed usage metrics/analytics
 
 ## Project Structure
