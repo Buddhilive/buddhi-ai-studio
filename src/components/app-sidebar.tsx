@@ -48,28 +48,12 @@ export const navData = {
     },
     {
       title: "Analytics",
-      url: "/analytics",
+      url: "#",
       icon: (
         <ChartColumnIcon
         />
       ),
       items: [
-        {
-          title: "Overview",
-          url: "/analytics",
-        },
-        {
-          title: "Requests",
-          url: "/analytics/requests",
-        },
-        {
-          title: "Tokens",
-          url: "/analytics/tokens",
-        },
-        {
-          title: "Latency",
-          url: "/analytics/latency",
-        },
         {
           title: "Errors",
           url: "/analytics/errors",

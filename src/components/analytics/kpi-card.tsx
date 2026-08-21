@@ -14,29 +14,35 @@ export function KpiCard({
 }: {
   title: string;
   value: string;
-  href: string;
+  href?: string;
   isLoading: boolean;
   icon?: ReactNode;
 }) {
+  const card = (
+    <Card
+      className={cn(href && "transition-colors hover:border-primary/50 hover:bg-accent/50")}
+    >
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+        <CardTitle className="text-muted-foreground text-sm font-medium">{title}</CardTitle>
+        {icon}
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-8 w-24" />
+        ) : (
+          <div className="text-2xl font-semibold tabular-nums">{value}</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  if (!href) {
+    return card;
+  }
+
   return (
     <Link href={href} className="block">
-      <Card
-        className={cn(
-          "transition-colors hover:border-primary/50 hover:bg-accent/50"
-        )}
-      >
-        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-          <CardTitle className="text-muted-foreground text-sm font-medium">{title}</CardTitle>
-          {icon}
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <Skeleton className="h-8 w-24" />
-          ) : (
-            <div className="text-2xl font-semibold tabular-nums">{value}</div>
-          )}
-        </CardContent>
-      </Card>
+      {card}
     </Link>
   );
 }

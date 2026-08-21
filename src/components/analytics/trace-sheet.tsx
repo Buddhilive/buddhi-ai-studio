@@ -38,13 +38,13 @@ export function TraceSheet({
 
   return (
     <Sheet open={requestId !== null} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full gap-0 sm:max-w-2xl">
+      <SheetContent className="w-full gap-0 overflow-hidden sm:max-w-2xl">
         <SheetHeader>
           <SheetTitle className="font-mono text-sm">{requestId}</SheetTitle>
           <SheetDescription>Trace detail</SheetDescription>
         </SheetHeader>
 
-        <ScrollArea className="flex-1 px-4 pb-4">
+        <ScrollArea className="min-h-0 flex-1 px-4 pb-4">
           {isLoading && (
             <div className="flex flex-col gap-3">
               <Skeleton className="h-4 w-full" />
