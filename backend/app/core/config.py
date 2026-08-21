@@ -19,5 +19,13 @@ class Settings(BaseSettings):
     chat_max_tokens_default: int = 1024
     chat_request_timeout_s: int = 120
 
+    metrics_db_path: Path = BACKEND_ROOT / "data" / "metrics.duckdb"
+    enable_trace_logging: bool = False
+    trace_retention_days: int = 30
+    metrics_queue_size: int = 1000
+    metrics_batch_size: int = 50
+    metrics_flush_interval_s: float = 2.0
+    enable_prometheus_metrics: bool = False
+
 
 settings = Settings()

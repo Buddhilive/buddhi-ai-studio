@@ -187,6 +187,12 @@ class InferenceEngineManager:
         except Exception:  # pragma: no cover - defensive fallback
             return max(1, len(text.split()))
 
+    def count_tokens(self, text: str) -> int:
+        """Public wrapper for streaming callers that need a token count after the fact."""
+        return self._token_count(self._load_engine(), text)
+
+    # Future extension point: wrap generate()/generate_stream() bodies in an
+    # OpenTelemetry span here once an exporter is configured elsewhere.
     async def generate(
         self,
         messages: list[ChatMessage],

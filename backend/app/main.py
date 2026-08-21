@@ -8,7 +8,9 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.routers import chat, health, models
+from app.routers import metrics as metrics_router
 from app.services.inference_service import inference_engine_manager
+from app.services.metrics import metrics_writer
 from app.services.model_download_service import model_download_manager
 
 
@@ -16,7 +18,9 @@ from app.services.model_download_service import model_download_manager
 async def lifespan(app: FastAPI):
     model_download_manager.scan_on_startup()
     inference_engine_manager.warm_up()
+    await metrics_writer.start()
     yield
+    await metrics_writer.stop()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -32,6 +36,8 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(models.router)
 app.include_router(chat.router)
+if settings.enable_prometheus_metrics:
+    app.include_router(metrics_router.router)
 
 
 @app.exception_handler(HTTPException)
