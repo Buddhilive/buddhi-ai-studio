@@ -7,6 +7,8 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from app.core.config import settings
+from app.core.model_catalog import ModelCategory, get_catalog_entry
+from app.services.model_download_service import model_download_manager
 from app.schemas.chat import (
     ChatCompletionChoice,
     ChatCompletionChunk,
@@ -40,10 +42,26 @@ def _openai_error(status_code: int, message: str, error_type: str, param: str | 
 
 
 def _validate_model(request: ChatCompletionRequest) -> None:
-    if request.model != settings.chat_model_id:
+    try:
+        entry = get_catalog_entry(request.model)
+    except KeyError as exc:
         raise _openai_error(
             status.HTTP_400_BAD_REQUEST,
-            f"The model '{request.model}' does not exist. Available model: '{settings.chat_model_id}'.",
+            f"The model '{request.model}' does not exist.",
+            "invalid_request_error",
+            param="model",
+        ) from exc
+    if entry.category != ModelCategory.LLM:
+        raise _openai_error(
+            status.HTTP_400_BAD_REQUEST,
+            f"The model '{request.model}' is not an LLM and cannot be used for chat.",
+            "invalid_request_error",
+            param="model",
+        )
+    if not model_download_manager.check_availability(request.model).available:
+        raise _openai_error(
+            status.HTTP_400_BAD_REQUEST,
+            f"The model '{request.model}' has not been downloaded yet.",
             "invalid_request_error",
             param="model",
         )
@@ -112,7 +130,7 @@ async def _blocking_response(
 ) -> ChatCompletionResponse:
     try:
         text, reasoning, prompt_tokens, completion_tokens = await inference_engine_manager.generate(
-            request.messages, request.max_tokens, request.enable_thinking
+            request.messages, request.max_tokens, request.enable_thinking, model_id=request.model
         )
     except ModelNotAvailableError as exc:
         _log_event(request, request_id, start, status="error", error_message=str(exc))
@@ -159,7 +177,7 @@ async def _stream_response(
             first = True
             in_thinking = False
             async for delta in inference_engine_manager.generate_stream(
-                request.messages, request.max_tokens, request.enable_thinking
+                request.messages, request.max_tokens, request.enable_thinking, model_id=request.model
             ):
                 piece = ""
                 if delta.reasoning:
@@ -221,12 +239,14 @@ async def _stream_response(
             try:
                 output_text = "".join(output_parts)
                 completion_tokens = (
-                    await asyncio.to_thread(inference_engine_manager.count_tokens, output_text)
+                    await asyncio.to_thread(
+                        inference_engine_manager.count_tokens, output_text, request.model
+                    )
                     if output_text
                     else 0
                 )
                 prompt_tokens = await asyncio.to_thread(
-                    inference_engine_manager.count_tokens, _prompt_text(request)
+                    inference_engine_manager.count_tokens, _prompt_text(request), request.model
                 )
                 _log_event(
                     request,

@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from litert_lm import Backend, Content, Contents, Engine, ThinkingConfig
 
 from app.core.config import settings
+from app.core.model_catalog import DEFAULT_CHAT_MODEL_ID, ModelCategory, get_catalog_entry
 from app.schemas.chat import ChatCompletionChunkDelta, ChatMessage
 from app.services.model_download_service import model_download_manager
 
@@ -122,32 +123,43 @@ def _content_to_text(content: str | list) -> str:
 class InferenceEngineManager:
     def __init__(self) -> None:
         self._engine: Engine | None = None
+        self._engine_model_id: str | None = None
         self._load_lock = threading.Lock()
         self._generate_lock = asyncio.Lock()
 
-    def _load_engine(self) -> Engine:
-        if self._engine is not None:
+    def _load_engine(self, model_id: str) -> Engine:
+        entry = get_catalog_entry(model_id)
+        if entry.category != ModelCategory.LLM:
+            raise InferenceError(f"Model '{model_id}' is not an LLM and cannot be used for chat.")
+
+        if self._engine is not None and self._engine_model_id == model_id:
             return self._engine
         with self._load_lock:
-            if self._engine is not None:
+            if self._engine is not None and self._engine_model_id == model_id:
                 return self._engine
-            availability = model_download_manager.check_availability()
+            availability = model_download_manager.check_availability(model_id)
             if not availability.available or not availability.path:
                 raise ModelNotAvailableError(
-                    "Model is not downloaded yet. Start a download via /api/models/download."
+                    f"Model '{model_id}' is not downloaded yet. Start a download via "
+                    f"/api/models/{model_id}/download."
                 )
             backend_cls = _BACKENDS.get(settings.litert_backend, Backend.CPU)
             try:
-                self._engine = Engine(
+                new_engine = Engine(
                     availability.path, backend=backend_cls(), vision_backend=backend_cls()
                 )
             except Exception as exc:  # pragma: no cover - depends on native runtime
                 raise InferenceError(f"Failed to load LiteRT-LM engine: {exc}") from exc
+            close = getattr(self._engine, "close", None)
+            if callable(close):
+                close()
+            self._engine = new_engine
+            self._engine_model_id = model_id
             return self._engine
 
     def warm_up(self) -> None:
         try:
-            self._load_engine()
+            self._load_engine(DEFAULT_CHAT_MODEL_ID)
         except ModelNotAvailableError:
             logger.info("Skipping inference engine warm-up: model not downloaded yet.")
         except InferenceError as exc:
@@ -187,9 +199,9 @@ class InferenceEngineManager:
         except Exception:  # pragma: no cover - defensive fallback
             return max(1, len(text.split()))
 
-    def count_tokens(self, text: str) -> int:
+    def count_tokens(self, text: str, model_id: str = DEFAULT_CHAT_MODEL_ID) -> int:
         """Public wrapper for streaming callers that need a token count after the fact."""
-        return self._token_count(self._load_engine(), text)
+        return self._token_count(self._load_engine(model_id), text)
 
     # Future extension point: wrap generate()/generate_stream() bodies in an
     # OpenTelemetry span here once an exporter is configured elsewhere.
@@ -198,8 +210,9 @@ class InferenceEngineManager:
         messages: list[ChatMessage],
         max_tokens: int | None,
         enable_thinking: bool = False,
+        model_id: str = DEFAULT_CHAT_MODEL_ID,
     ) -> tuple[str, str, int, int]:
-        engine = self._load_engine()
+        engine = self._load_engine(model_id)
         effective_max_tokens = max_tokens or settings.chat_max_tokens_default
 
         def _run() -> tuple[str, str]:
@@ -229,8 +242,9 @@ class InferenceEngineManager:
         messages: list[ChatMessage],
         max_tokens: int | None,
         enable_thinking: bool = False,
+        model_id: str = DEFAULT_CHAT_MODEL_ID,
     ):
-        engine = self._load_engine()
+        engine = self._load_engine(model_id)
         effective_max_tokens = max_tokens or settings.chat_max_tokens_default
 
         def _make_iterator():

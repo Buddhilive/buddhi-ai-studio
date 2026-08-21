@@ -13,6 +13,7 @@ class DownloadStatus(str, Enum):
 
 
 class ModelDownloadState(BaseModel):
+    model_id: str
     status: DownloadStatus = DownloadStatus.IDLE
     repo_id: str
     filename: str
@@ -24,6 +25,7 @@ class ModelDownloadState(BaseModel):
 
 
 class ModelAvailability(BaseModel):
+    model_id: str
     available: bool
     path: str | None = None
     size_bytes: int | None = None
