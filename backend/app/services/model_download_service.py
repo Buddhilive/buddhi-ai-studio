@@ -9,7 +9,7 @@ from pathlib import Path
 from huggingface_hub import HfApi, hf_hub_url
 from huggingface_hub.utils import HfHubHTTPError, build_hf_headers, hf_raise_for_status, http_stream_backoff
 
-from app.core import settings_store
+from app.core import model_metadata_store, settings_store
 from app.core.config import settings
 from app.core.model_catalog import MODEL_CATALOG, ModelCatalogEntry, get_catalog_entry
 from app.schemas.download import DownloadStatus, ModelAvailability, ModelDownloadState
@@ -154,6 +154,7 @@ class ModelDownloadManager:
         target = self._target_path(entry)
         if target.exists():
             target.unlink()
+        model_metadata_store.delete_created(entry.id)
 
     def _fetch_total_bytes(self, entry: ModelCatalogEntry) -> int | None:
         try:
@@ -201,6 +202,7 @@ class ModelDownloadManager:
                             self._on_chunk(model_id, len(chunk))
 
             os.replace(part, target)
+            model_metadata_store.record_created(model_id, int(target.stat().st_mtime))
         except DownloadPaused:
             self._set_state(model_id, status=DownloadStatus.PAUSED)
             return
@@ -250,6 +252,7 @@ class ModelDownloadManager:
                     total_bytes=size,
                     percentage=100.0,
                 )
+                model_metadata_store.record_created(entry.id, int(target.stat().st_mtime))
                 continue
 
             part = self._part_path(entry)

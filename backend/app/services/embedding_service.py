@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from enum import Enum
 
 from sentence_transformers import SentenceTransformer
 
+from app.core import model_metadata_store
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -70,6 +72,7 @@ class EmbeddingEngineManager:
                     f"Embedding model '{settings.embedding_model_repo_id}' could not be loaded: {exc}"
                 ) from exc
             self._status = EmbeddingStatus.READY
+            model_metadata_store.record_created(settings.embedding_model_id, int(time.time()))
             return self._model
 
     def warm_up(self) -> None:
