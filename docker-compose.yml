@@ -10,7 +10,9 @@ services:
       - ./backend/models:/app/models
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
-      CORS_ORIGINS: '["http://localhost:54321"]'
+      CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:54321"]'}
+      ENABLE_TRACE_LOGGING: ${ENABLE_TRACE_LOGGING:-true}
+      TRACE_RETENTION_DAYS: ${TRACE_RETENTION_DAYS:-30}
     restart: unless-stopped
 
   frontend:
@@ -20,7 +22,7 @@ services:
     ports:
       - "54321:3000"
     environment:
-      BACKEND_API_URL: http://backend:8000
+      BACKEND_API_URL: ${BACKEND_API_URL:-http://backend:8000}
     depends_on:
       - backend
     restart: unless-stopped

@@ -201,7 +201,7 @@ function EmbeddingModelCard({ tokenConfigured }: { tokenConfigured: boolean }) {
       <CardHeader>
         <CardTitle className="text-base">{modelId ?? "EmbeddingGemma 300M"}</CardTitle>
         <CardDescription className="font-mono">
-          {repoId ?? "google/embeddinggemma-300m"}
+          {repoId ?? "litert-community/embeddinggemma-300m"}
         </CardDescription>
         <CardAction>
           <Badge variant={EMBEDDING_STATUS_VARIANT[status]}>

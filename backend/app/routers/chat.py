@@ -166,6 +166,7 @@ async def _stream_response(
     async def event_stream():
         chunk_id = None
         output_parts: list[str] = []
+        reasoning_parts: list[str] = []
         error_message: str | None = None
         try:
             first = True
@@ -179,6 +180,7 @@ async def _stream_response(
                         piece += "<think>"
                         in_thinking = True
                     piece += delta.reasoning
+                    reasoning_parts.append(delta.reasoning)
                 if delta.content:
                     if in_thinking:
                         piece += "</think>"
@@ -232,11 +234,18 @@ async def _stream_response(
         finally:
             try:
                 output_text = "".join(output_parts)
+                reasoning_text = "".join(reasoning_parts)
                 completion_tokens = (
                     await asyncio.to_thread(
                         inference_engine_manager.count_tokens, output_text, request.model
                     )
                     if output_text
+                    else 0
+                ) + (
+                    await asyncio.to_thread(
+                        inference_engine_manager.count_tokens, reasoning_text, request.model
+                    )
+                    if reasoning_text
                     else 0
                 )
                 prompt_tokens = await asyncio.to_thread(

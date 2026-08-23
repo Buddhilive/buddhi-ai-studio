@@ -54,10 +54,10 @@ uv run uvicorn app.main:app --reload --port 8000
 pnpm install
 ```
 
-Create `.env.local` in the project root and point it at the backend:
+Copy `.env.example` to `.env` in the project root (adjust `BACKEND_API_URL` if your backend runs on a different port):
 
-```
-BACKEND_API_URL=http://localhost:8000
+```bash
+cp .env.example .env
 ```
 
 Then start the dev server:
@@ -78,14 +78,25 @@ This starts both services:
 - Frontend on host port `54321`
 - Backend on host port `87654`
 
-Optionally set `HF_TOKEN` in your environment before running to let the backend download gated/private Hugging Face models. You can also configure this token later at runtime from the Settings page instead of an env var.
+Optionally set `HF_TOKEN` in your environment (or in a root `.env`) before running to let the backend download gated/private Hugging Face models. You can also configure this token later at runtime from the Settings page instead of an env var.
 
 ## Environment Variables
+
+Copy [`.env.example`](.env.example) to `.env` at the project root — it's used by the Next.js frontend, the FastAPI backend (via pydantic-settings), and `docker-compose.yml`.
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
 | `BACKEND_API_URL` | Frontend | Base URL of the FastAPI backend that Next.js API routes proxy to |
 | `HF_TOKEN` | Backend (optional) | Hugging Face token for downloading gated/private models. Can also be set via the in-app Settings page instead. |
+| `CORS_ORIGINS` | Backend | JSON array of allowed CORS origins |
+| `LITERT_BACKEND` | Backend | LiteRT inference backend (`cpu`) |
+| `CHAT_MAX_TOKENS_DEFAULT` | Backend | Default max tokens for chat completions |
+| `CHAT_REQUEST_TIMEOUT_S` | Backend | Chat request timeout, in seconds |
+| `EMBEDDING_DEVICE` | Backend | Device used for local embedding models (`cpu`) |
+| `EMBEDDING_MAX_BATCH_SIZE` | Backend | Max batch size for embedding requests |
+| `ENABLE_TRACE_LOGGING` | Backend | Persist real prompt/response text per trace in Analytics > Traces |
+| `TRACE_RETENTION_DAYS` | Backend | Days before trace prompt/response text is purged |
+| `ENABLE_PROMETHEUS_METRICS` | Backend | Expose the `/metrics` Prometheus endpoint |
 
 ## Scripts
 

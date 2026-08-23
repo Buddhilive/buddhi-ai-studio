@@ -60,11 +60,29 @@ MODEL_CATALOG: list[ModelCatalogEntry] = [
         filename="gemma3-1b-it-int4.litertlm",
         size_bytes=584_000_000,
     ),
+    ModelCatalogEntry(
+        id="embeddinggemma-300m-litert",
+        category=ModelCategory.EMBEDDING,
+        name="EmbeddingGemma 300M (LiteRT, seq512)",
+        repo_id="litert-community/embeddinggemma-300m",
+        filename="embeddinggemma-300M_seq512_mixed-precision.tflite",
+        size_bytes=190_000_000,
+    ),
+    ModelCatalogEntry(
+        id="embeddinggemma-300m-tokenizer",
+        category=ModelCategory.EMBEDDING,
+        name="EmbeddingGemma 300M Tokenizer (SentencePiece)",
+        repo_id="litert-community/embeddinggemma-300m",
+        filename="sentencepiece.model",
+        size_bytes=4_800_000,
+    ),
 ]
 
 _CATALOG_BY_ID: dict[str, ModelCatalogEntry] = {entry.id: entry for entry in MODEL_CATALOG}
 
 DEFAULT_CHAT_MODEL_ID = "gemma-4-e4b"
+EMBEDDING_MODEL_CATALOG_ID = "embeddinggemma-300m-litert"
+EMBEDDING_TOKENIZER_CATALOG_ID = "embeddinggemma-300m-tokenizer"
 
 
 def get_catalog_entry(model_id: str) -> ModelCatalogEntry:

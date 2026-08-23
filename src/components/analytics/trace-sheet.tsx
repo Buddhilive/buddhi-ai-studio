@@ -38,7 +38,7 @@ export function TraceSheet({
 
   return (
     <Sheet open={requestId !== null} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full gap-0 overflow-hidden sm:max-w-2xl">
+      <SheetContent className="w-full gap-0 overflow-hidden sm:max-w-3xl lg:max-w-4xl">
         <SheetHeader>
           <SheetTitle className="font-mono text-sm">{requestId}</SheetTitle>
           <SheetDescription>Trace detail</SheetDescription>
