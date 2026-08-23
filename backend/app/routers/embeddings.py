@@ -93,7 +93,7 @@ async def create_embeddings(request: EmbeddingRequest) -> EmbeddingResponse:
     texts = _normalize_input(request)
 
     try:
-        vectors, prompt_tokens = embedding_engine_manager.encode(texts, request.dimensions)
+        vectors, prompt_tokens = await embedding_engine_manager.encode(texts, request.dimensions)
     except EmbeddingModelNotAvailableError as exc:
         _log_event(request, request_id, start, status_label="error", error_message=str(exc))
         raise openai_error(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc), "model_not_available") from exc

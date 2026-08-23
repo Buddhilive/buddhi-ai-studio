@@ -21,10 +21,15 @@ class Settings(BaseSettings):
     chat_request_timeout_s: int = 120
 
     embedding_model_id: str = "embeddinggemma-300m"
-    embedding_model_repo_id: str = "google/embeddinggemma-300m"
+    embedding_model_repo_id: str = "litert-community/embeddinggemma-300m"
+    embedding_model_filename: str = "embeddinggemma-300M_seq512_mixed-precision.tflite"
+    embedding_tokenizer_filename: str = "sentencepiece.model"
     embedding_cache_dir: Path = BACKEND_ROOT / "models" / "embeddings"
     embedding_device: str = "cpu"
     embedding_max_batch_size: int = 32
+    embedding_seq_length: int = 512
+    embedding_dim: int = 768
+    embedding_num_threads: int = 4
 
     metrics_db_path: Path = BACKEND_ROOT / "data" / "metrics.duckdb"
     enable_trace_logging: bool = True

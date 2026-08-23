@@ -11,7 +11,7 @@ from huggingface_hub.utils import HfHubHTTPError, build_hf_headers, hf_raise_for
 
 from app.core import model_metadata_store, settings_store
 from app.core.config import settings
-from app.core.model_catalog import MODEL_CATALOG, ModelCatalogEntry, get_catalog_entry
+from app.core.model_catalog import MODEL_CATALOG, ModelCatalogEntry, ModelCategory, get_catalog_entry
 from app.schemas.download import DownloadStatus, ModelAvailability, ModelDownloadState
 
 logger = logging.getLogger(__name__)
@@ -47,11 +47,14 @@ class ModelDownloadManager:
             for entry in MODEL_CATALOG
         }
 
+    def _base_dir(self, entry: ModelCatalogEntry) -> Path:
+        return settings.embedding_cache_dir if entry.category == ModelCategory.EMBEDDING else settings.models_dir
+
     def _target_path(self, entry: ModelCatalogEntry) -> Path:
-        return settings.models_dir / entry.filename
+        return self._base_dir(entry) / entry.filename
 
     def _part_path(self, entry: ModelCatalogEntry) -> Path:
-        return settings.models_dir / f"{entry.filename}.part"
+        return self._base_dir(entry) / f"{entry.filename}.part"
 
     def _on_chunk(self, model_id: str, size: int) -> None:
         with self._lock:
@@ -172,7 +175,7 @@ class ModelDownloadManager:
         target = self._target_path(entry)
         part = self._part_path(entry)
         try:
-            settings.models_dir.mkdir(parents=True, exist_ok=True)
+            self._base_dir(entry).mkdir(parents=True, exist_ok=True)
             if self._states[model_id].total_bytes is None:
                 self._set_state(model_id, total_bytes=self._fetch_total_bytes(entry))
             url = hf_hub_url(entry.repo_id, entry.filename)
@@ -241,6 +244,7 @@ class ModelDownloadManager:
 
     def scan_on_startup(self) -> None:
         settings.models_dir.mkdir(parents=True, exist_ok=True)
+        settings.embedding_cache_dir.mkdir(parents=True, exist_ok=True)
         for entry in MODEL_CATALOG:
             target = self._target_path(entry)
             if target.exists():
