@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "buddhi": {
+      "command": "buddhi-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}
