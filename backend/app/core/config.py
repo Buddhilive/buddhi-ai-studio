@@ -39,5 +39,11 @@ class Settings(BaseSettings):
     metrics_flush_interval_s: float = 2.0
     enable_prometheus_metrics: bool = False
 
+    # SearXNG & MCP
+    searxng_base_url: str = "http://localhost:8080"
+    searxng_timeout_s: float = 10.0
+    mcp_server_name: str = "buddhi-search"
+    mcp_mount_path: str = "/mcp"
+
 
 settings = Settings()

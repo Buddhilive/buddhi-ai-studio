@@ -1,10 +1,27 @@
 services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: buddhi-searxng
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      SEARXNG_BASE_URL: http://localhost:8080/
+      SEARXNG_SECRET_KEY: ${SEARXNG_SECRET_KEY:-changeme-generate-a-random-string}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "87654:8000"
+      - "8765:8000"
     volumes:
       - ./backend/data:/app/data
       - ./backend/models:/app/models
@@ -13,6 +30,10 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:54321"]'}
       ENABLE_TRACE_LOGGING: ${ENABLE_TRACE_LOGGING:-true}
       TRACE_RETENTION_DAYS: ${TRACE_RETENTION_DAYS:-30}
+      SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080}
+    depends_on:
+      searxng:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
