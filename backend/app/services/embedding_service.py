@@ -5,6 +5,7 @@ import logging
 import threading
 import time
 from enum import Enum
+from typing import Any
 
 import numpy as np
 import sentencepiece as spm
@@ -15,6 +16,7 @@ from app.core.config import settings
 from app.core.model_catalog import (
     EMBEDDING_MODEL_CATALOG_ID,
     EMBEDDING_TOKENIZER_CATALOG_ID,
+    get_catalog_entry,
 )
 from app.schemas.download import DownloadStatus
 from app.services.model_download_service import model_download_manager
@@ -32,9 +34,14 @@ class EmbeddingInferenceError(RuntimeError):
     """Raised when the LiteRT embedding model fails to encode input."""
 
 
+class DownloadCanceledError(Exception):
+    """Raised internally when an in-flight download is canceled."""
+
+
 class EmbeddingStatus(str, Enum):
     NOT_DOWNLOADED = "not_downloaded"
     DOWNLOADING = "downloading"
+    PAUSED = "paused"
     READY = "ready"
     ERROR = "error"
 
@@ -62,9 +69,92 @@ class EmbeddingEngineManager:
         self._status = EmbeddingStatus.NOT_DOWNLOADED
         self._error: str | None = None
         self._download_task: asyncio.Task | None = None
+        self._cancel_requested: bool = False
 
     def get_status(self) -> tuple[EmbeddingStatus, str | None]:
         return self._status, self._error
+
+    def get_progress(self) -> dict[str, Any]:
+        if self._interpreter is not None:
+            self._status = EmbeddingStatus.READY
+        elif self._status not in (EmbeddingStatus.DOWNLOADING, EmbeddingStatus.PAUSED):
+            avail_model = model_download_manager.check_availability(EMBEDDING_MODEL_CATALOG_ID)
+            avail_tok = model_download_manager.check_availability(EMBEDDING_TOKENIZER_CATALOG_ID)
+            if avail_model.available and avail_tok.available:
+                self._status = EmbeddingStatus.READY
+
+        entry_model = get_catalog_entry(EMBEDDING_MODEL_CATALOG_ID)
+        entry_tok = get_catalog_entry(EMBEDDING_TOKENIZER_CATALOG_ID)
+
+        state_model = model_download_manager.get_state(EMBEDDING_MODEL_CATALOG_ID)
+        state_tok = model_download_manager.get_state(EMBEDDING_TOKENIZER_CATALOG_ID)
+
+        total_bytes = (entry_model.size_bytes or 190_000_000) + (entry_tok.size_bytes or 4_800_000)
+
+        if self._status == EmbeddingStatus.READY:
+            downloaded_bytes = total_bytes
+            percentage = 100.0
+            current_phase = "ready"
+        else:
+            downloaded_bytes = state_model.downloaded_bytes + state_tok.downloaded_bytes
+            percentage = min(100.0, round(100.0 * downloaded_bytes / total_bytes, 2)) if total_bytes else 0.0
+
+            if self._status == EmbeddingStatus.DOWNLOADING:
+                if state_model.status == DownloadStatus.DOWNLOADING:
+                    current_phase = "model"
+                elif state_tok.status == DownloadStatus.DOWNLOADING:
+                    current_phase = "tokenizer"
+                elif state_model.status == DownloadStatus.COMPLETED and state_tok.status == DownloadStatus.COMPLETED:
+                    current_phase = "loading"
+                else:
+                    current_phase = "model"
+            elif self._status == EmbeddingStatus.PAUSED:
+                if state_model.status == DownloadStatus.PAUSED:
+                    current_phase = "model"
+                else:
+                    current_phase = "tokenizer"
+            else:
+                current_phase = None
+
+        return {
+            "status": self._status,
+            "error": self._error,
+            "downloaded_bytes": downloaded_bytes,
+            "total_bytes": total_bytes,
+            "percentage": percentage,
+            "current_phase": current_phase,
+            "files": {
+                EMBEDDING_MODEL_CATALOG_ID: state_model,
+                EMBEDDING_TOKENIZER_CATALOG_ID: state_tok,
+            },
+        }
+
+    def pause(self) -> None:
+        if self._status != EmbeddingStatus.DOWNLOADING:
+            return
+        self._status = EmbeddingStatus.PAUSED
+        try:
+            model_download_manager.pause()
+        except RuntimeError:
+            pass
+
+    def resume(self) -> None:
+        if self._status != EmbeddingStatus.PAUSED:
+            return
+        self._status = EmbeddingStatus.DOWNLOADING
+        try:
+            model_download_manager.resume()
+        except RuntimeError:
+            pass
+
+    def cancel(self) -> None:
+        self._cancel_requested = True
+        self._status = EmbeddingStatus.NOT_DOWNLOADED
+        self._error = None
+        try:
+            model_download_manager.cancel()
+        except RuntimeError:
+            pass
 
     @staticmethod
     def _load_tokenizer(path: str) -> spm.SentencePieceProcessor:
@@ -191,15 +281,19 @@ class EmbeddingEngineManager:
         """
         if self._status in (EmbeddingStatus.DOWNLOADING, EmbeddingStatus.READY):
             return self._status
+        self._cancel_requested = False
         self._status = EmbeddingStatus.DOWNLOADING
+        self._error = None
         self._download_task = asyncio.create_task(
             asyncio.to_thread(self._background_download_then_load)
         )
         return self._status
 
-    def _poll_until_done(self, catalog_id: str, timeout_s: float = 3600.0, interval_s: float = 1.0) -> None:
+    def _poll_until_done(self, catalog_id: str, timeout_s: float = 3600.0, interval_s: float = 0.5) -> None:
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
+            if self._cancel_requested:
+                raise DownloadCanceledError("Download canceled")
             state = model_download_manager.get_state(catalog_id)
             if state.status == DownloadStatus.COMPLETED:
                 return
@@ -207,26 +301,41 @@ class EmbeddingEngineManager:
                 raise EmbeddingModelNotAvailableError(
                     f"Download failed for {catalog_id}: {state.error}"
                 )
+            if state.status == DownloadStatus.PAUSED:
+                # Keep deadline fresh while paused so it doesn't time out
+                deadline = time.monotonic() + timeout_s
             time.sleep(interval_s)
         raise EmbeddingModelNotAvailableError(f"Download timed out for {catalog_id}")
 
     def _background_download_then_load(self) -> None:
         try:
             for catalog_id in (EMBEDDING_MODEL_CATALOG_ID, EMBEDDING_TOKENIZER_CATALOG_ID):
+                if self._cancel_requested:
+                    self._status = EmbeddingStatus.NOT_DOWNLOADED
+                    return
                 availability = model_download_manager.check_availability(catalog_id)
                 if availability.available:
                     continue
                 model_download_manager.start(catalog_id)
                 self._poll_until_done(catalog_id)
+            if self._cancel_requested:
+                self._status = EmbeddingStatus.NOT_DOWNLOADED
+                return
             self._load_model()
+        except DownloadCanceledError:
+            self._status = EmbeddingStatus.NOT_DOWNLOADED
+            self._error = None
+            logger.info("Embedding engine download canceled")
         except EmbeddingModelNotAvailableError as exc:
-            self._status = EmbeddingStatus.ERROR
-            self._error = str(exc)
-            logger.warning("Embedding engine download/load failed: %s", exc)
+            if not self._cancel_requested:
+                self._status = EmbeddingStatus.ERROR
+                self._error = str(exc)
+                logger.warning("Embedding engine download/load failed: %s", exc)
         except Exception as exc:  # pragma: no cover - unexpected failure
-            self._status = EmbeddingStatus.ERROR
-            self._error = str(exc)
-            logger.exception("Embedding engine background download failed")
+            if not self._cancel_requested:
+                self._status = EmbeddingStatus.ERROR
+                self._error = str(exc)
+                logger.exception("Embedding engine background download failed")
 
     def _tokenize_one(self, text: str) -> tuple[np.ndarray, int]:
         seq_len = settings.embedding_seq_length

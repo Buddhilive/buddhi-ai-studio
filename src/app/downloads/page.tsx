@@ -74,8 +74,22 @@ function useHfTokenStatus() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/settings/hf-token");
+        const data = await res.json();
+        if (!cancelled) setConfigured(Boolean(data.configured));
+      } catch (err) {
+        console.error("[downloads] failed to load HF token status:", err);
+        if (!cancelled) setConfigured(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return { configured, refresh };
 }
@@ -179,6 +193,7 @@ const EMBEDDING_STATUS_LABEL: Record<
 > = {
   not_downloaded: "Not downloaded",
   downloading: "Downloading",
+  paused: "Paused",
   ready: "Downloaded",
   error: "Failed",
 };
@@ -189,12 +204,51 @@ const EMBEDDING_STATUS_VARIANT: Record<
 > = {
   not_downloaded: "secondary",
   downloading: "default",
+  paused: "outline",
   ready: "default",
   error: "destructive",
 };
 
+function getEmbeddingPhaseDescription(
+  currentPhase: string | null,
+  files?: ReturnType<typeof useEmbeddingModelStatus>["files"]
+): string {
+  if (currentPhase === "model") {
+    const modelState = files?.["embeddinggemma-300m-litert"];
+    if (modelState && modelState.downloaded_bytes > 0 && modelState.total_bytes) {
+      return `Downloading LiteRT model weights (Phase 1/2: ${formatBytes(modelState.downloaded_bytes)} / ${formatBytes(modelState.total_bytes)})`;
+    }
+    return "Downloading LiteRT model weights (Phase 1/2)...";
+  }
+  if (currentPhase === "tokenizer") {
+    const tokState = files?.["embeddinggemma-300m-tokenizer"];
+    if (tokState && tokState.downloaded_bytes > 0 && tokState.total_bytes) {
+      return `Downloading SentencePiece tokenizer (Phase 2/2: ${formatBytes(tokState.downloaded_bytes)} / ${formatBytes(tokState.total_bytes)})`;
+    }
+    return "Downloading SentencePiece tokenizer (Phase 2/2)...";
+  }
+  if (currentPhase === "loading") {
+    return "Initializing LiteRT interpreter and tokenizer...";
+  }
+  return "Downloading model files...";
+}
+
 function EmbeddingModelCard({ tokenConfigured }: { tokenConfigured: boolean }) {
-  const { modelId, repoId, status, error, startDownload } = useEmbeddingModelStatus();
+  const {
+    modelId,
+    repoId,
+    status,
+    error,
+    downloadedBytes,
+    totalBytes,
+    percentage,
+    currentPhase,
+    files,
+    startDownload,
+    pauseDownload,
+    resumeDownload,
+    cancelDownload,
+  } = useEmbeddingModelStatus();
 
   return (
     <Card>
@@ -215,14 +269,36 @@ function EmbeddingModelCard({ tokenConfigured }: { tokenConfigured: boolean }) {
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <CheckCircle2Icon className="text-primary size-4" />
             Model downloaded and ready
+            {totalBytes ? ` (${formatBytes(totalBytes)})` : ""}
           </div>
         )}
 
-        {status === "downloading" && (
-          <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            <Loader2Icon className="size-4 animate-spin" />
-            Downloading model files (this can take a while, no byte-level progress
-            available)...
+        {(status === "downloading" || status === "paused") && (
+          <div className="flex flex-col gap-2">
+            <div className="text-muted-foreground flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 font-medium">
+                {status === "downloading" && (
+                  <Loader2Icon className="size-3.5 animate-spin" />
+                )}
+                {getEmbeddingPhaseDescription(currentPhase, files)}
+              </span>
+              <span>{percentage.toFixed(1)}%</span>
+            </div>
+            <Progress value={totalBytes ? percentage : null}>
+              <div className="flex w-full items-center justify-between">
+                <ProgressLabel>
+                  {formatBytes(downloadedBytes)}
+                  {totalBytes ? ` / ${formatBytes(totalBytes)}` : ""}
+                </ProgressLabel>
+                <ProgressValue />
+              </div>
+            </Progress>
+          </div>
+        )}
+
+        {status === "not_downloaded" && (
+          <div className="text-muted-foreground text-sm">
+            Includes LiteRT model weights and SentencePiece tokenizer (~194.8 MB total).
           </div>
         )}
 
@@ -241,6 +317,24 @@ function EmbeddingModelCard({ tokenConfigured }: { tokenConfigured: boolean }) {
             <DownloadIcon />
             Download
           </Button>
+        )}
+        {status === "downloading" && (
+          <Button variant="outline" onClick={() => void pauseDownload()}>
+            <PauseIcon />
+            Pause
+          </Button>
+        )}
+        {status === "paused" && (
+          <>
+            <Button onClick={() => void resumeDownload()}>
+              <PlayIcon />
+              Resume
+            </Button>
+            <Button variant="outline" onClick={() => void cancelDownload()}>
+              <XIcon />
+              Cancel
+            </Button>
+          </>
         )}
       </CardFooter>
     </Card>
