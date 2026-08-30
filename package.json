@@ -1,12 +1,15 @@
 {
   "name": "buddhi-ai-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
+  "packageManager": "pnpm@10.28.2",
   "scripts": {
     "dev": "next dev --port 54321",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "docker:publish": "bash ./scripts/publish-docker.sh",
+    "docker:publish:win": "scripts\\publish-docker.bat"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.8",

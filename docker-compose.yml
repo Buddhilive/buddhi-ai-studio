@@ -17,6 +17,7 @@ services:
     restart: unless-stopped
 
   backend:
+    image: buddhilive/ai-studio-service:${AI_STUDIO_VERSION:-latest}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -37,6 +38,7 @@ services:
     restart: unless-stopped
 
   frontend:
+    image: buddhilive/ai-studio-ui:${AI_STUDIO_VERSION:-latest}
     build:
       context: .
       dockerfile: Dockerfile

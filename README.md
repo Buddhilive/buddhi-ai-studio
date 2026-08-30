@@ -70,13 +70,54 @@ The frontend runs at [http://localhost:54321](http://localhost:54321).
 
 ## Running with Docker Compose
 
+Buddhi AI Studio can be run with Docker Compose either directly using pre-built images from Docker Hub or built locally from source.
+
+### Quick Start (Pre-built Images)
+
+Users can run Buddhi AI Studio without installing Node.js or Python:
+
 ```bash
-docker compose up
+# Start all services in the background
+docker compose up -d
 ```
 
-This starts both services:
-- Frontend on host port `54321`
-- Backend on host port `8765`
+- Frontend: [http://localhost:54321](http://localhost:54321)
+- Backend: [http://localhost:8765](http://localhost:8765) (docs at `/docs`)
+- SearXNG: [http://localhost:8080](http://localhost:8080)
+
+### Updating to the Latest Version
+
+When a new version is released on Docker Hub, update your installation with:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+All persistent data (models, chat history, settings) is preserved in mounted volumes across updates.
+
+### Pinning a Specific Version
+
+To lock your deployment to a specific version instead of `:latest`, set `AI_STUDIO_VERSION` in your `.env` file or environment:
+
+```env
+AI_STUDIO_VERSION=0.2.0
+```
+
+### Publishing Images (Maintainers)
+
+To build and publish new versioned images to Docker Hub (`buddhilive/ai-studio-service` and `buddhilive/ai-studio-ui`):
+
+- **Linux / macOS / WSL / Git Bash**:
+  ```bash
+  ./scripts/publish-docker.sh 0.2.0
+  ```
+- **Windows (Command Prompt / PowerShell)**:
+  ```cmd
+  .\scripts\publish-docker.bat 0.2.0
+  ```
+
+If no version argument is passed, the script prompts for a version tag or automatically detects it from `package.json`. Both `<version>` and `latest` tags are built and pushed.
 
 Optionally set `HF_TOKEN` in your environment (or in a root `.env`) before running to let the backend download gated/private Hugging Face models. You can also configure this token later at runtime from the Settings page instead of an env var.
 
