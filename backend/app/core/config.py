@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     models_dir: Path = BACKEND_ROOT / "models" / "static"
     litert_backend: str = "cpu"
+    chat_max_num_tokens: int = 16384
     chat_max_tokens_default: int = 1024
     chat_request_timeout_s: int = 120
 
