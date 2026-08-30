@@ -7,12 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.routers import analytics, chat, embedding_model, embeddings, health, models, models_v1, settings as settings_router
+from app.mcp_server import mcp_server
+from app.routers import analytics, chat, embedding_model, embeddings, health, models, models_v1, search, settings as settings_router
 from app.routers import metrics as metrics_router
 from app.services.embedding_service import embedding_engine_manager
 from app.services.inference_service import inference_engine_manager
 from app.services.metrics import metrics_writer
 from app.services.model_download_service import model_download_manager
+from app.services.search_service import searxng_service
 
 
 @asynccontextmanager
@@ -21,7 +23,9 @@ async def lifespan(app: FastAPI):
     inference_engine_manager.warm_up()
     embedding_engine_manager.warm_up()
     await metrics_writer.start()
+    await searxng_service.start()
     yield
+    await searxng_service.stop()
     await metrics_writer.stop()
 
 
@@ -43,8 +47,12 @@ app.include_router(chat.router)
 app.include_router(embeddings.router)
 app.include_router(models_v1.router)
 app.include_router(embedding_model.router)
+app.include_router(search.router)
 if settings.enable_prometheus_metrics:
     app.include_router(metrics_router.router)
+
+# Mount FastMCP SSE transport
+app.mount(settings.mcp_mount_path, mcp_server.sse_app())
 
 
 @app.exception_handler(HTTPException)

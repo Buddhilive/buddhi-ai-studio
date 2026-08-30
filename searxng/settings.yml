@@ -1,0 +1,25 @@
+# SearXNG Configuration for Buddhi AI Studio
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "Buddhi Search"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json
+
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "buddhi-searxng-secret-key-change-in-production"
+  limiter: false
+  image_proxy: false
+
+ui:
+  static_use_hash: true
+  query_in_title: true

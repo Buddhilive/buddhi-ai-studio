@@ -76,7 +76,7 @@ docker compose up
 
 This starts both services:
 - Frontend on host port `54321`
-- Backend on host port `87654`
+- Backend on host port `8765`
 
 Optionally set `HF_TOKEN` in your environment (or in a root `.env`) before running to let the backend download gated/private Hugging Face models. You can also configure this token later at runtime from the Settings page instead of an env var.
 

@@ -2,16 +2,38 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type EmbeddingModelStatus = "not_downloaded" | "downloading" | "ready" | "error";
+export type EmbeddingModelStatus =
+  | "not_downloaded"
+  | "downloading"
+  | "paused"
+  | "ready"
+  | "error";
+
+export interface ModelDownloadComponentState {
+  model_id: string;
+  status: "idle" | "downloading" | "paused" | "completed" | "failed";
+  repo_id: string;
+  filename: string;
+  downloaded_bytes: number;
+  total_bytes: number | null;
+  percentage: number;
+  error: string | null;
+  updated_at: string;
+}
 
 export interface EmbeddingModelStatusResponse {
   model_id: string;
   repo_id: string;
   status: EmbeddingModelStatus;
   error: string | null;
+  downloaded_bytes: number;
+  total_bytes: number | null;
+  percentage: number;
+  current_phase: string | null;
+  files?: Record<string, ModelDownloadComponentState>;
 }
 
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_ACTIVE_MS = 1000;
 
 async function parseJsonOrThrow<T>(res: Response): Promise<T> {
   const data = await res.json().catch(() => null);
@@ -64,8 +86,7 @@ export function useEmbeddingModelStatus() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchStatus]);
 
   const status = state?.status ?? "not_downloaded";
 
@@ -75,29 +96,61 @@ export function useEmbeddingModelStatus() {
       return;
     }
     if (!pollTimerRef.current) {
-      pollTimerRef.current = setInterval(() => void fetchStatus(), POLL_INTERVAL_MS);
+      pollTimerRef.current = setInterval(() => void fetchStatus(), POLL_INTERVAL_ACTIVE_MS);
     }
     return stopPolling;
   }, [status, fetchStatus, stopPolling]);
 
-  const startDownload = useCallback(async () => {
-    try {
-      const res = await fetch("/api/embedding-model/download", { method: "POST" });
-      const data = await parseJsonOrThrow<EmbeddingModelStatusResponse>(res);
-      setState(data);
-      setFetchError(null);
-    } catch (err) {
-      console.error("[useEmbeddingModelStatus] download trigger failed:", err);
-      setFetchError(err instanceof Error ? err.message : "Failed to start download");
-    }
-  }, []);
+  const executeAction = useCallback(
+    async (url: string, method: "POST" | "DELETE", errorFallback: string) => {
+      try {
+        const res = await fetch(url, { method });
+        const data = await parseJsonOrThrow<EmbeddingModelStatusResponse>(res);
+        setState(data);
+        setFetchError(null);
+      } catch (err) {
+        console.error(`[useEmbeddingModelStatus] ${method} ${url} failed:`, err);
+        setFetchError(err instanceof Error ? err.message : errorFallback);
+      }
+    },
+    []
+  );
+
+  const startDownload = useCallback(
+    () => executeAction("/api/embedding-model/download", "POST", "Failed to start download"),
+    [executeAction]
+  );
+
+  const pauseDownload = useCallback(
+    () => executeAction("/api/embedding-model/download/pause", "POST", "Failed to pause download"),
+    [executeAction]
+  );
+
+  const resumeDownload = useCallback(
+    () => executeAction("/api/embedding-model/download/resume", "POST", "Failed to resume download"),
+    [executeAction]
+  );
+
+  const cancelDownload = useCallback(
+    () => executeAction("/api/embedding-model/download", "DELETE", "Failed to cancel download"),
+    [executeAction]
+  );
 
   return {
     modelId: state?.model_id ?? null,
     repoId: state?.repo_id ?? null,
     status,
     error: state?.error ?? fetchError,
+    downloadedBytes: state?.downloaded_bytes ?? 0,
+    totalBytes: state?.total_bytes ?? null,
+    percentage: state?.percentage ?? 0,
+    currentPhase: state?.current_phase ?? null,
+    files: state?.files,
     isLoading,
     startDownload,
+    pauseDownload,
+    resumeDownload,
+    cancelDownload,
+    refresh: fetchStatus,
   };
 }
