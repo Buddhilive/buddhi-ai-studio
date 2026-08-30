@@ -9,12 +9,14 @@ from fastapi.responses import StreamingResponse
 from app.core.config import settings
 from app.core.model_catalog import ModelCategory, get_catalog_entry
 from app.core.openai_errors import openai_error as _openai_error
+from app.core.tool_parser import StreamingToolCallBuffer, extract_tool_calls
 from app.services.model_download_service import model_download_manager
 from app.schemas.chat import (
     ChatCompletionChoice,
     ChatCompletionChunk,
     ChatCompletionChunkChoice,
     ChatCompletionChunkDelta,
+    ChatCompletionChunkDeltaToolCall,
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatMessage,
@@ -73,7 +75,9 @@ async def create_chat_completion(request: ChatCompletionRequest):
     return await _blocking_response(request, request_id, start)
 
 
-def _message_text(content: str | list) -> str:
+def _message_text(content: str | list | None) -> str:
+    if content is None:
+        return ""
     if isinstance(content, str):
         return content
     return "".join(p.text for p in content if p.type == "text")
@@ -124,7 +128,11 @@ async def _blocking_response(
 ) -> ChatCompletionResponse:
     try:
         text, reasoning, prompt_tokens, completion_tokens = await inference_engine_manager.generate(
-            request.messages, request.max_tokens, request.enable_thinking, model_id=request.model
+            request.messages,
+            request.max_tokens,
+            request.enable_thinking,
+            model_id=request.model,
+            tools=request.tools,
         )
     except ModelNotAvailableError as exc:
         _log_event(request, request_id, start, status="error", error_message=str(exc))
@@ -133,7 +141,21 @@ async def _blocking_response(
         _log_event(request, request_id, start, status="error", error_message=str(exc))
         raise _openai_error(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc), "server_error") from exc
 
-    content = f"<think>{reasoning}</think>{text}" if reasoning else text
+    residual_text, tool_calls = extract_tool_calls(text)
+    if tool_calls:
+        finish_reason = "tool_calls"
+        if reasoning:
+            assistant_content = (
+                f"<think>{reasoning}</think>{residual_text}"
+                if residual_text
+                else f"<think>{reasoning}</think>"
+            )
+        else:
+            assistant_content = residual_text
+    else:
+        finish_reason = "stop"
+        assistant_content = f"<think>{reasoning}</think>{text}" if reasoning else text
+
     _log_event(
         request,
         request_id,
@@ -141,15 +163,19 @@ async def _blocking_response(
         status="ok",
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
-        output_text=content,
+        output_text=text,
     )
 
     return ChatCompletionResponse(
         model=request.model,
         choices=[
             ChatCompletionChoice(
-                message=ChatMessage(role="assistant", content=content),
-                finish_reason="stop",
+                message=ChatMessage(
+                    role="assistant",
+                    content=assistant_content,
+                    tool_calls=tool_calls if tool_calls else None,
+                ),
+                finish_reason=finish_reason,
             )
         ],
         usage=Usage(
@@ -168,11 +194,17 @@ async def _stream_response(
         output_parts: list[str] = []
         reasoning_parts: list[str] = []
         error_message: str | None = None
+        tool_buffer = StreamingToolCallBuffer()
+        tc_index = 0
         try:
             first = True
             in_thinking = False
             async for delta in inference_engine_manager.generate_stream(
-                request.messages, request.max_tokens, request.enable_thinking, model_id=request.model
+                request.messages,
+                request.max_tokens,
+                request.enable_thinking,
+                model_id=request.model,
+                tools=request.tools,
             ):
                 piece = ""
                 if delta.reasoning:
@@ -185,25 +217,54 @@ async def _stream_response(
                     if in_thinking:
                         piece += "</think>"
                         in_thinking = False
-                    piece += delta.content
                     output_parts.append(delta.content)
-                if not piece:
-                    continue
-                chunk = ChatCompletionChunk(
-                    model=request.model,
-                    choices=[
-                        ChatCompletionChunkChoice(
-                            delta=ChatCompletionChunkDelta(
-                                role="assistant" if first else None,
-                                content=piece,
-                            ),
-                            finish_reason=None,
-                        )
-                    ],
-                )
-                chunk_id = chunk_id or chunk.id
-                first = False
-                yield f"data: {chunk.model_dump_json()}\n\n"
+                    text_to_yield, extracted_calls = tool_buffer.process_chunk(delta.content)
+                    if text_to_yield:
+                        piece += text_to_yield
+                else:
+                    extracted_calls = []
+
+                if piece:
+                    chunk = ChatCompletionChunk(
+                        model=request.model,
+                        choices=[
+                            ChatCompletionChunkChoice(
+                                delta=ChatCompletionChunkDelta(
+                                    role="assistant" if first else None,
+                                    content=piece,
+                                ),
+                                finish_reason=None,
+                            )
+                        ],
+                    )
+                    chunk_id = chunk_id or chunk.id
+                    first = False
+                    yield f"data: {chunk.model_dump_json()}\n\n"
+
+                for tc in extracted_calls:
+                    tc_chunk = ChatCompletionChunk(
+                        model=request.model,
+                        choices=[
+                            ChatCompletionChunkChoice(
+                                delta=ChatCompletionChunkDelta(
+                                    role="assistant" if first else None,
+                                    tool_calls=[
+                                        ChatCompletionChunkDeltaToolCall(
+                                            index=tc_index,
+                                            id=tc.id,
+                                            type="function",
+                                            function=tc.function,
+                                        )
+                                    ],
+                                ),
+                                finish_reason=None,
+                            )
+                        ],
+                    )
+                    chunk_id = chunk_id or tc_chunk.id
+                    first = False
+                    tc_index += 1
+                    yield f"data: {tc_chunk.model_dump_json()}\n\n"
 
             if in_thinking:
                 closing_chunk = ChatCompletionChunk(
@@ -218,11 +279,58 @@ async def _stream_response(
                 )
                 yield f"data: {closing_chunk.model_dump_json()}\n\n"
 
+            final_text, final_calls = tool_buffer.finalize()
+            if final_text:
+                chunk = ChatCompletionChunk(
+                    id=chunk_id,
+                    model=request.model,
+                    choices=[
+                        ChatCompletionChunkChoice(
+                            delta=ChatCompletionChunkDelta(
+                                role="assistant" if first else None,
+                                content=final_text,
+                            ),
+                            finish_reason=None,
+                        )
+                    ],
+                )
+                first = False
+                yield f"data: {chunk.model_dump_json()}\n\n"
+
+            for tc in final_calls:
+                tc_chunk = ChatCompletionChunk(
+                    id=chunk_id,
+                    model=request.model,
+                    choices=[
+                        ChatCompletionChunkChoice(
+                            delta=ChatCompletionChunkDelta(
+                                role="assistant" if first else None,
+                                tool_calls=[
+                                    ChatCompletionChunkDeltaToolCall(
+                                        index=tc_index,
+                                        id=tc.id,
+                                        type="function",
+                                        function=tc.function,
+                                    )
+                                ],
+                            ),
+                            finish_reason=None,
+                        )
+                    ],
+                )
+                first = False
+                tc_index += 1
+                yield f"data: {tc_chunk.model_dump_json()}\n\n"
+
+            final_finish_reason = "tool_calls" if tool_buffer.has_tool_calls else "stop"
             final_chunk = ChatCompletionChunk(
                 id=chunk_id or ChatCompletionChunk(model=request.model, choices=[]).id,
                 model=request.model,
                 choices=[
-                    ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(), finish_reason="stop")
+                    ChatCompletionChunkChoice(
+                        delta=ChatCompletionChunkDelta(),
+                        finish_reason=final_finish_reason,
+                    )
                 ],
             )
             yield f"data: {final_chunk.model_dump_json()}\n\n"

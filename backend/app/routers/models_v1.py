@@ -7,7 +7,7 @@ from fastapi import APIRouter, status
 
 from app.core import model_metadata_store
 from app.core.config import settings
-from app.core.model_catalog import MODEL_CATALOG
+from app.core.model_catalog import MODEL_CATALOG, ModelCategory
 from app.core.openai_errors import openai_error
 from app.schemas.models import ModelListResponse, ModelObject
 from app.services.embedding_service import EmbeddingStatus, embedding_engine_manager
@@ -36,6 +36,8 @@ def _get_or_backfill_created(model_id: str, source_path: Path) -> int | None:
 def _llm_models() -> list[ModelObject]:
     models: list[ModelObject] = []
     for entry in MODEL_CATALOG:
+        if entry.category != ModelCategory.LLM:
+            continue
         availability = model_download_manager.check_availability(entry.id)
         if not availability.available or not availability.path:
             continue
@@ -46,23 +48,10 @@ def _llm_models() -> list[ModelObject]:
     return models
 
 
-def _embedding_model() -> ModelObject | None:
-    embedding_status, _ = embedding_engine_manager.get_status()
-    if embedding_status != EmbeddingStatus.READY:
-        return None
-    created = _get_or_backfill_created(settings.embedding_model_id, settings.embedding_cache_dir)
-    if created is None:
-        return None
-    return ModelObject(id=settings.embedding_model_id, created=created, owned_by=_OWNED_BY)
-
-
 @router.get("/models", response_model=ModelListResponse)
 def list_models() -> ModelListResponse:
     try:
         models = _llm_models()
-        embedding_model = _embedding_model()
-        if embedding_model is not None:
-            models.append(embedding_model)
     except Exception as exc:  # pragma: no cover - defensive catch-all
         logger.exception("Unexpected error while listing models")
         raise openai_error(

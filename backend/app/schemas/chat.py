@@ -1,10 +1,10 @@
 import time
 import uuid
-from typing import Literal, Union
+from typing import Any, Literal, Union
 
 from pydantic import BaseModel, Field, field_validator
 
-Role = Literal["system", "user", "assistant"]
+Role = Literal["system", "user", "assistant", "tool"]
 
 
 class TextContentPart(BaseModel):
@@ -24,9 +24,34 @@ class ImageContentPart(BaseModel):
 ContentPart = Union[TextContentPart, ImageContentPart]
 
 
+class FunctionCall(BaseModel):
+    name: str | None = None
+    arguments: str | None = None
+
+
+class ToolCall(BaseModel):
+    id: str = Field(default_factory=lambda: f"call_{uuid.uuid4().hex[:12]}")
+    type: Literal["function"] = "function"
+    function: FunctionCall
+
+
+class FunctionDefinition(BaseModel):
+    name: str
+    description: str | None = None
+    parameters: dict[str, Any] | None = None
+
+
+class ToolDefinition(BaseModel):
+    type: Literal["function"] = "function"
+    function: FunctionDefinition
+
+
 class ChatMessage(BaseModel):
     role: Role
-    content: str | list[ContentPart]
+    content: str | list[ContentPart] | None = None
+    name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[ToolCall] | None = None
 
 
 class ChatCompletionRequest(BaseModel):
@@ -42,6 +67,8 @@ class ChatCompletionRequest(BaseModel):
     frequency_penalty: float = 0.0
     user: str | None = None
     enable_thinking: bool = False
+    tools: list[ToolDefinition] | None = None
+    tool_choice: Union[str, dict[str, Any], None] = None
 
     @field_validator("messages")
     @classmethod
@@ -67,7 +94,7 @@ class Usage(BaseModel):
 class ChatCompletionChoice(BaseModel):
     index: int = 0
     message: ChatMessage
-    finish_reason: Literal["stop", "length"] = "stop"
+    finish_reason: Literal["stop", "length", "tool_calls"] = "stop"
 
 
 class ChatCompletionResponse(BaseModel):
@@ -79,16 +106,24 @@ class ChatCompletionResponse(BaseModel):
     usage: Usage
 
 
+class ChatCompletionChunkDeltaToolCall(BaseModel):
+    index: int = 0
+    id: str | None = None
+    type: Literal["function"] | None = "function"
+    function: FunctionCall | None = None
+
+
 class ChatCompletionChunkDelta(BaseModel):
     role: Role | None = None
     content: str | None = None
     reasoning: str | None = None
+    tool_calls: list[ChatCompletionChunkDeltaToolCall] | None = None
 
 
 class ChatCompletionChunkChoice(BaseModel):
     index: int = 0
     delta: ChatCompletionChunkDelta
-    finish_reason: Literal["stop", "length"] | None = None
+    finish_reason: Literal["stop", "length", "tool_calls"] | None = None
 
 
 class ChatCompletionChunk(BaseModel):

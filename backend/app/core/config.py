@@ -7,7 +7,7 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(BACKEND_ROOT.parent / ".env"),
+        env_file=(str(BACKEND_ROOT.parent / ".env"), str(BACKEND_ROOT.parent / ".env.local")),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     models_dir: Path = BACKEND_ROOT / "models" / "static"
     litert_backend: str = "cpu"
+    chat_max_num_tokens: int = 16384
     chat_max_tokens_default: int = 1024
     chat_request_timeout_s: int = 120
 
