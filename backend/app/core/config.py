@@ -7,7 +7,7 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(BACKEND_ROOT.parent / ".env"),
+        env_file=(str(BACKEND_ROOT.parent / ".env"), str(BACKEND_ROOT.parent / ".env.local")),
         env_file_encoding="utf-8",
         extra="ignore",
     )

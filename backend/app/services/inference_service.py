@@ -11,6 +11,7 @@ from collections.abc import Mapping
 
 from litert_lm import Backend, Content, Contents, Engine, ThinkingConfig
 
+from app.core import settings_store
 from app.core.config import settings
 from app.core.model_catalog import DEFAULT_CHAT_MODEL_ID, ModelCategory, get_catalog_entry
 from app.schemas.chat import ChatCompletionChunkDelta, ChatMessage, ToolDefinition
@@ -173,40 +174,126 @@ class InferenceEngineManager:
     def __init__(self) -> None:
         self._engine: Engine | None = None
         self._engine_model_id: str | None = None
+        self._configured_backend: str | None = None
+        self._configured_max_tokens: int | None = None
+        self._active_backend: str | None = None
+        self._active_max_tokens: int | None = None
         self._load_lock = threading.Lock()
         self._generate_lock = asyncio.Lock()
+
+    def get_current_backend(self) -> str:
+        if self._configured_backend is not None:
+            return self._configured_backend
+        return str(settings_store.get_inference_settings()["litert_backend"])
+
+    def get_current_max_tokens(self) -> int:
+        if self._configured_max_tokens is not None:
+            return self._configured_max_tokens
+        return int(settings_store.get_inference_settings()["max_num_token"])
+
+    def reconfigure(self, backend: str, max_num_tokens: int) -> None:
+        with self._load_lock:
+            self._configured_backend = backend
+            self._configured_max_tokens = max_num_tokens
+            if self._engine is not None:
+                close = getattr(self._engine, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception as exc:
+                        logger.warning("Error while closing old engine: %s", exc)
+                self._engine = None
+                self._engine_model_id = None
+                self._active_backend = None
+                self._active_max_tokens = None
 
     def _load_engine(self, model_id: str) -> Engine:
         entry = get_catalog_entry(model_id)
         if entry.category != ModelCategory.LLM:
             raise InferenceError(f"Model '{model_id}' is not an LLM and cannot be used for chat.")
 
-        if self._engine is not None and self._engine_model_id == model_id:
+        current_backend = self.get_current_backend()
+        current_max_tokens = self.get_current_max_tokens()
+
+        if (
+            self._engine is not None
+            and self._engine_model_id == model_id
+            and self._active_backend == current_backend
+            and self._active_max_tokens == current_max_tokens
+        ):
             return self._engine
+
         with self._load_lock:
-            if self._engine is not None and self._engine_model_id == model_id:
+            if (
+                self._engine is not None
+                and self._engine_model_id == model_id
+                and self._active_backend == current_backend
+                and self._active_max_tokens == current_max_tokens
+            ):
                 return self._engine
+
             availability = model_download_manager.check_availability(model_id)
             if not availability.available or not availability.path:
                 raise ModelNotAvailableError(
                     f"Model '{model_id}' is not downloaded yet. Start a download via "
                     f"/api/models/{model_id}/download."
                 )
-            backend_cls = _BACKENDS.get(settings.litert_backend, Backend.CPU)
+
+            backend_cls = _BACKENDS.get(current_backend, Backend.CPU)
+            try:
+                backend_inst = backend_cls()
+                vision_backend_inst = backend_cls()
+            except Exception as exc:
+                logger.warning(
+                    "Failed to instantiate %s backend (%s). Falling back to CPU.",
+                    current_backend,
+                    exc,
+                )
+                current_backend = "cpu"
+                backend_cls = Backend.CPU
+                backend_inst = backend_cls()
+                vision_backend_inst = backend_cls()
+
             try:
                 new_engine = Engine(
                     availability.path,
-                    backend=backend_cls(),
-                    vision_backend=backend_cls(),
-                    max_num_tokens=settings.chat_max_num_tokens,
+                    backend=backend_inst,
+                    vision_backend=vision_backend_inst,
+                    max_num_tokens=current_max_tokens,
                 )
-            except Exception as exc:  # pragma: no cover - depends on native runtime
-                raise InferenceError(f"Failed to load LiteRT-LM engine: {exc}") from exc
+            except Exception as exc:
+                if current_backend != "cpu":
+                    logger.warning(
+                        "Failed to load engine on %s (%s). Retrying fallback on CPU.",
+                        current_backend,
+                        exc,
+                    )
+                    try:
+                        new_engine = Engine(
+                            availability.path,
+                            backend=Backend.CPU(),
+                            vision_backend=Backend.CPU(),
+                            max_num_tokens=current_max_tokens,
+                        )
+                        current_backend = "cpu"
+                    except Exception as cpu_exc:
+                        raise InferenceError(
+                            f"Failed to load LiteRT-LM engine even on CPU fallback: {cpu_exc}"
+                        ) from cpu_exc
+                else:
+                    raise InferenceError(f"Failed to load LiteRT-LM engine: {exc}") from exc
+
             close = getattr(self._engine, "close", None)
             if callable(close):
-                close()
+                try:
+                    close()
+                except Exception as exc:
+                    logger.warning("Error while closing previous engine: %s", exc)
+
             self._engine = new_engine
             self._engine_model_id = model_id
+            self._active_backend = current_backend
+            self._active_max_tokens = current_max_tokens
             return self._engine
 
     def warm_up(self) -> None:
