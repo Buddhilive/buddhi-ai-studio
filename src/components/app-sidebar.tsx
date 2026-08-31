@@ -21,6 +21,7 @@ import {
   LayoutDashboardIcon,
   ChartColumnIcon,
   SettingsIcon,
+  BoxIcon,
 } from "lucide-react"
 
 // This is sample data.
@@ -70,6 +71,14 @@ export const navData = {
       url: "/chat",
       icon: (
         <TerminalSquareIcon
+        />
+      ),
+    },
+    {
+      title: "Sandbox",
+      url: "/sandbox",
+      icon: (
+        <BoxIcon
         />
       ),
     },

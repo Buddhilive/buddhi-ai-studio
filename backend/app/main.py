@@ -8,12 +8,13 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.mcp_server import mcp_server
-from app.routers import analytics, chat, embedding_model, embeddings, health, models, models_v1, search, settings as settings_router
+from app.routers import analytics, chat, embedding_model, embeddings, health, models, models_v1, sandbox, search, settings as settings_router
 from app.routers import metrics as metrics_router
 from app.services.embedding_service import embedding_engine_manager
 from app.services.inference_service import inference_engine_manager
 from app.services.metrics import metrics_writer
 from app.services.model_download_service import model_download_manager
+from app.services.sandbox_service import sandbox_service
 from app.services.search_service import searxng_service
 
 
@@ -24,7 +25,9 @@ async def lifespan(app: FastAPI):
     embedding_engine_manager.warm_up()
     await metrics_writer.start()
     await searxng_service.start()
+    await sandbox_service.start()
     yield
+    await sandbox_service.stop()
     await searxng_service.stop()
     await metrics_writer.stop()
 
@@ -49,6 +52,7 @@ app.include_router(embeddings.router)
 app.include_router(models_v1.router)
 app.include_router(embedding_model.router)
 app.include_router(search.router)
+app.include_router(sandbox.router)
 if settings.enable_prometheus_metrics:
     app.include_router(metrics_router.router)
 

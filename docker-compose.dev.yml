@@ -15,3 +15,20 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  opensandbox:
+    image: docker.io/opensandbox/server:latest
+    container_name: buddhi-opensandbox-dev
+    ports:
+      - "8090:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./sandbox/.sandbox.toml:/etc/opensandbox/config.toml:ro
+    environment:
+      OPENSANDBOX_CONFIG: /etc/opensandbox/config.toml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped

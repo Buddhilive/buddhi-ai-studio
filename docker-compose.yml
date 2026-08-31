@@ -16,6 +16,23 @@ services:
       retries: 5
     restart: unless-stopped
 
+  opensandbox:
+    image: docker.io/opensandbox/server:latest
+    container_name: buddhi-opensandbox
+    ports:
+      - "8090:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./sandbox/.sandbox.toml:/etc/opensandbox/config.toml:ro
+    environment:
+      OPENSANDBOX_CONFIG: /etc/opensandbox/config.toml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   backend:
     image: buddhilive/ai-studio-service:${AI_STUDIO_VERSION:-latest}
     build:
@@ -32,8 +49,11 @@ services:
       ENABLE_TRACE_LOGGING: ${ENABLE_TRACE_LOGGING:-true}
       TRACE_RETENTION_DAYS: ${TRACE_RETENTION_DAYS:-30}
       SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080}
+      OPENSANDBOX_SERVER_URL: ${OPENSANDBOX_SERVER_URL:-http://opensandbox:8080}
     depends_on:
       searxng:
+        condition: service_healthy
+      opensandbox:
         condition: service_healthy
     restart: unless-stopped
 

@@ -46,5 +46,13 @@ class Settings(BaseSettings):
     mcp_server_name: str = "buddhi-search"
     mcp_mount_path: str = "/mcp"
 
+    # OpenSandbox
+    opensandbox_server_url: str = "http://localhost:8090"
+    sandbox_default_timeout_s: int = 60
+    sandbox_default_memory_mb: int = 512
+    sandbox_default_allow_network: bool = False
+    sandbox_default_image: str = "python:3.11-slim"
+    sandbox_session_inactivity_ttl_s: int = 1800
+
 
 settings = Settings()
