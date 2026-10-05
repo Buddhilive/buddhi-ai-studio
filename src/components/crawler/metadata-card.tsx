@@ -74,8 +74,8 @@ export function MetadataCard({ result }: MetadataCardProps) {
         )}
 
         {result.error && (
-          <div className="p-2.5 rounded bg-destructive/10 border border-destructive/20 text-destructive text-xs">
-            {result.error}
+          <div className="p-2.5 rounded bg-destructive/10 border border-destructive/20 text-destructive text-xs break-all">
+            {typeof result.error === "string" ? result.error : JSON.stringify(result.error)}
           </div>
         )}
       </CardContent>

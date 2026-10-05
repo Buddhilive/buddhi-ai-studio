@@ -57,6 +57,17 @@ export default function CrawlerPage() {
 
       const data = await res.json();
       if (!res.ok) {
+        let errorMessage = `HTTP ${res.status}: Failed to crawl webpage`;
+        if (typeof data.detail === "string") {
+          errorMessage = data.detail;
+        } else if (data.detail && typeof data.detail === "object") {
+          errorMessage = data.detail.error?.message || data.detail.message || JSON.stringify(data.detail);
+        } else if (typeof data.error === "string") {
+          errorMessage = data.error;
+        } else if (data.error && typeof data.error === "object") {
+          errorMessage = data.error.message || JSON.stringify(data.error);
+        }
+
         setResult({
           url: config.url,
           status: "failed",
@@ -66,7 +77,7 @@ export default function CrawlerPage() {
           links_count: 0,
           media_count: 0,
           execution_duration_ms: 0,
-          error: data.detail || data.error || `HTTP ${res.status}: Failed to crawl webpage`,
+          error: errorMessage,
         });
       } else {
         setResult(data);
@@ -135,8 +146,25 @@ export default function CrawlerPage() {
         </div>
       </div>
 
+      {/* Offline Service Guidance */}
+      {healthStatus && !healthStatus.connected && (
+        <div className="flex items-start gap-3 p-3.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-xs">
+          <AlertTriangleIcon className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-semibold text-amber-800 dark:text-amber-300">Crawl4AI Service Offline</p>
+            <p className="text-muted-foreground">
+              The Crawl4AI service container is not running or unreachable at port 11235. Start the container using Docker Compose:
+            </p>
+            <code className="inline-block px-2 py-0.5 rounded bg-background/80 border border-border/50 font-mono text-[11px] text-foreground">
+              docker compose -f docker-compose.dev.yml up -d crawl4ai
+            </code>
+          </div>
+        </div>
+      )}
+
       {/* Crawler Form */}
       <CrawlerForm onCrawl={handleCrawl} isLoading={isLoading} />
+
 
       {/* Metadata Overview */}
       {result && <MetadataCard result={result} />}

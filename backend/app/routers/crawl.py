@@ -37,13 +37,8 @@ def _track_request(status_code: str) -> None:
     description="Check connectivity and health of the upstream Crawl4AI container.",
 )
 async def get_crawl_health() -> CrawlHealthStatus:
-    health = await crawl_service.check_health()
-    if health.status == "unhealthy":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=health.model_dump(),
-        )
-    return health
+    return await crawl_service.check_health()
+
 
 
 @router.post(

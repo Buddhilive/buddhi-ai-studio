@@ -83,7 +83,7 @@ class CrawlService:
         health_url = f"{self.base_url}/health"
         start_time = time.perf_counter()
         try:
-            res = await client.get(health_url, timeout=5.0)
+            res = await client.get(health_url, timeout=httpx.Timeout(2.0, connect=1.0))
             latency_ms = (time.perf_counter() - start_time) * 1000.0
             if res.is_success:
                 data = res.json() if res.content else {}
@@ -160,8 +160,9 @@ class CrawlService:
             response = await client.post(
                 crawl_url,
                 json=payload,
-                timeout=req_timeout,
+                timeout=httpx.Timeout(req_timeout, connect=2.0),
             )
+
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
             if response.status_code == 401 or response.status_code == 403:
