@@ -22,6 +22,7 @@ import {
   ChartColumnIcon,
   SettingsIcon,
   BoxIcon,
+  GlobeIcon,
 } from "lucide-react"
 
 // This is sample data.
@@ -79,6 +80,14 @@ export const navData = {
       url: "/sandbox",
       icon: (
         <BoxIcon
+        />
+      ),
+    },
+    {
+      title: "Crawler",
+      url: "/crawler",
+      icon: (
+        <GlobeIcon
         />
       ),
     },

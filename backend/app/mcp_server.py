@@ -5,7 +5,9 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from app.core.config import settings
+from app.schemas.crawl import CrawlRequest
 from app.schemas.sandbox import SandboxExecutionRequest
+from app.services.crawl_service import crawl_service
 from app.services.sandbox_service import sandbox_service
 from app.services.search_service import searxng_service
 
@@ -14,8 +16,9 @@ logger = logging.getLogger(__name__)
 # FastMCP server instance
 mcp_server = FastMCP(
     name=settings.mcp_server_name,
-    instructions="Buddhi AI Studio MCP server providing live web search via SearXNG and isolated code execution via OpenSandbox.",
+    instructions="Buddhi AI Studio MCP server providing live web search via SearXNG, web crawling & markdown extraction via Crawl4AI, and isolated code execution via OpenSandbox.",
 )
+
 
 
 @mcp_server.tool(
@@ -162,7 +165,101 @@ async def sandbox_read_file(
         return {"status": "error", "error": str(exc), "path": path}
 
 
+@mcp_server.tool(
+    name="crawl_url",
+    description="Crawl a webpage URL using Crawl4AI headless browser and extract clean, LLM-ready markdown, title, and metadata.",
+)
+async def crawl_url(
+    url: str,
+    css_selector: str | None = None,
+    only_main_content: bool = True,
+    bypass_cache: bool = False,
+) -> dict[str, Any]:
+    """Crawl a webpage and return clean markdown and metadata."""
+    try:
+        req = CrawlRequest(
+            url=url,
+            css_selector=css_selector,
+            only_main_content=only_main_content,
+            bypass_cache=bypass_cache,
+        )
+        res = await crawl_service.crawl(req)
+        return res.model_dump()
+    except Exception as exc:
+        logger.warning("Error in crawl_url tool: %s", exc)
+        return {
+            "status": "error",
+            "url": url,
+            "error": f"Crawl failed: {exc}",
+            "markdown": "",
+            "title": "",
+            "status_code": 500,
+        }
+
+
+@mcp_server.tool(
+    name="crawl_page_content",
+    description="Advanced crawl tool supporting custom JavaScript execution and wait conditions before extracting markdown.",
+)
+async def crawl_page_content(
+    url: str,
+    js_code: str | None = None,
+    wait_for: str | None = None,
+    css_selector: str | None = None,
+    only_main_content: bool = True,
+) -> dict[str, Any]:
+    """Execute dynamic crawl with JavaScript execution or wait conditions."""
+    try:
+        req = CrawlRequest(
+            url=url,
+            js_code=js_code,
+            wait_for=wait_for,
+            css_selector=css_selector,
+            only_main_content=only_main_content,
+        )
+        res = await crawl_service.crawl(req)
+        return res.model_dump()
+    except Exception as exc:
+        logger.warning("Error in crawl_page_content tool: %s", exc)
+        return {
+            "status": "error",
+            "url": url,
+            "error": f"Crawl failed: {exc}",
+            "markdown": "",
+            "title": "",
+            "status_code": 500,
+        }
+
+
+@mcp_server.tool(
+    name="crawl_batch_urls",
+    description="Crawl multiple webpage URLs in batch and return aggregated markdown contents.",
+)
+async def crawl_batch_urls(
+    urls: list[str],
+    only_main_content: bool = True,
+) -> list[dict[str, Any]]:
+    """Batch crawl multiple URLs and return results."""
+    results: list[dict[str, Any]] = []
+    for u in urls[:10]:  # Limit to 10 for interactive tool invocations
+        try:
+            req = CrawlRequest(url=u, only_main_content=only_main_content)
+            res = await crawl_service.crawl(req)
+            results.append(res.model_dump())
+        except Exception as exc:
+            results.append({
+                "status": "error",
+                "url": u,
+                "error": str(exc),
+                "markdown": "",
+                "title": "",
+                "status_code": 500,
+            })
+    return results
+
+
 def run_stdio() -> None:
+
     """Entrypoint for desktop MCP clients using stdio transport."""
     # Ensure stdout is reserved exclusively for JSON-RPC MCP messages
     logging.basicConfig(

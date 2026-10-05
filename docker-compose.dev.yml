@@ -32,3 +32,19 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: buddhi-crawl4ai-dev
+    ports:
+      - "11235:11235"
+    shm_size: '1gb'
+    environment:
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-changeme-crawl4ai-token}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11235/health || wget -qO- http://localhost:11235/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+

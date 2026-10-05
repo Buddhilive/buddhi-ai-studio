@@ -33,6 +33,21 @@ services:
       retries: 5
     restart: unless-stopped
 
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: buddhi-crawl4ai
+    ports:
+      - "11235:11235"
+    shm_size: '1gb'
+    environment:
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-changeme-crawl4ai-token}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11235/health || wget -qO- http://localhost:11235/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   backend:
     image: buddhilive/ai-studio-service:${AI_STUDIO_VERSION:-latest}
     build:
@@ -50,12 +65,17 @@ services:
       TRACE_RETENTION_DAYS: ${TRACE_RETENTION_DAYS:-30}
       SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080}
       OPENSANDBOX_SERVER_URL: ${OPENSANDBOX_SERVER_URL:-http://opensandbox:8080}
+      CRAWL4AI_BASE_URL: ${CRAWL4AI_BASE_URL:-http://crawl4ai:11235}
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-changeme-crawl4ai-token}
     depends_on:
       searxng:
         condition: service_healthy
       opensandbox:
         condition: service_healthy
+      crawl4ai:
+        condition: service_healthy
     restart: unless-stopped
+
 
   frontend:
     image: buddhilive/ai-studio-ui:${AI_STUDIO_VERSION:-latest}

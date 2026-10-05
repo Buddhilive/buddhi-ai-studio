@@ -54,5 +54,12 @@ class Settings(BaseSettings):
     sandbox_default_image: str = "python:3.11-slim"
     sandbox_session_inactivity_ttl_s: int = 1800
 
+    # Crawl4AI
+    crawl4ai_base_url: str = "http://localhost:11235"
+    crawl4ai_api_token: str = "changeme-crawl4ai-token"
+    crawl4ai_timeout_s: float = 60.0
+    crawl4ai_max_payload_bytes: int = 5_242_880  # 5MB
+
+
 
 settings = Settings()
