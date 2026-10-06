@@ -176,7 +176,7 @@ async def discover_via_crawl_fallback(
             continue
 
         try:
-            req = CrawlRequest(url=curr_url, timeout_s=15, bypass_cache=True)
+            req = CrawlRequest(url=curr_url, timeout_s=35.0, bypass_cache=True)
             res = await crawl_service.crawl(req)
             for link in res.internal_links:
                 full_url = urljoin(curr_url, link)
@@ -268,7 +268,10 @@ async def discover_all(
     summaries: list[DiscoverRootSummary] = []
 
     async with httpx.AsyncClient(
-        headers={"User-Agent": "Buddhi-AI-Studio/1.0 (+site-crawler)"},
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
         follow_redirects=True,
     ) as client:
         for r in roots:

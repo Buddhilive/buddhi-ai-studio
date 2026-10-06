@@ -126,14 +126,14 @@ export function UrlInputCard({
               id="maxPagesInput"
               type="number"
               min={1}
-              max={1000}
+              max={6000}
               value={maxPages}
-              onChange={(e) => onMaxPagesChange(Math.min(1000, Math.max(1, parseInt(e.target.value) || 1)))}
+              onChange={(e) => onMaxPagesChange(Math.min(6000, Math.max(1, parseInt(e.target.value) || 1)))}
               disabled={disabled}
               className="h-8 text-xs"
             />
             <p className="text-[11px] text-muted-foreground">
-              Default 100 pages. Hard cap is 1000 pages per project.
+              Default 100 pages. Hard cap is 6000 pages per project.
             </p>
           </div>
 

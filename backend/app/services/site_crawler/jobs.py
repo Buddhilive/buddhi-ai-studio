@@ -145,14 +145,16 @@ class JobRunner:
                 crawl_queue.task_done()
                 await project_store.save_manifest(bucket, self.manifest)
 
+        crawling_finished = asyncio.Event()
+
         async def _extract_worker():
             extracted_since_last_rebuild = 0
             while not self.cancel_event.is_set():
                 try:
-                    # Wait for items or until crawl is done
+                    # Wait for items or until crawl is completely done
                     page, markdown, title = await asyncio.wait_for(extract_queue.get(), timeout=1.0)
                 except asyncio.TimeoutError:
-                    if crawl_queue.empty() and extract_queue.empty():
+                    if crawling_finished.is_set() and extract_queue.empty():
                         break
                     continue
 
@@ -206,6 +208,7 @@ class JobRunner:
         extract_task = asyncio.create_task(_extract_worker())
 
         await asyncio.gather(*crawl_tasks)
+        crawling_finished.set()
         await extract_task
 
         # Finalize

@@ -71,11 +71,11 @@ class CreateJobRequest(BaseModel):
 
     project_name: str = Field(..., min_length=1, max_length=100)
     bucket: str = Field(...)
-    urls: list[str] = Field(..., min_length=1, max_length=1000)
+    urls: list[str] = Field(..., min_length=1, max_length=6000)
     extraction_schema: ExtractionSchema = Field(..., alias="schema")
     include_patterns: list[str] = Field(default_factory=list)
     exclude_patterns: list[str] = Field(default_factory=list)
-    max_pages: int = Field(100, ge=1, le=1000)
+    max_pages: int = Field(100, ge=1, le=6000)
     ignore_robots: bool = False
     model_id: str | None = None
     crawl_options: CrawlOptions = Field(default_factory=CrawlOptions)

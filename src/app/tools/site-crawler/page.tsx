@@ -212,12 +212,55 @@ export default function SiteCrawlerPage() {
     }
   };
 
+  const progressRef = React.useRef<HTMLDivElement>(null);
+
   const handleStartRun = async () => {
     setSubmitError(null);
 
     let urls: string[] = [];
-    if (enableDiscovery && discoveredUrls.length > 0) {
-      urls = Array.from(selectedUrls);
+    if (enableDiscovery) {
+      if (discoveredUrls.length > 0) {
+        urls = Array.from(selectedUrls);
+      } else {
+        // Automatically run discovery first if user enabled discovery but hadn't clicked discover
+        const roots = rawUrls
+          .split("\n")
+          .map((u) => u.trim())
+          .filter(Boolean);
+
+        if (roots.length === 0) {
+          setSubmitError("Please enter at least one root URL to discover.");
+          return;
+        }
+
+        setIsDiscovering(true);
+        try {
+          const res = await fetch("/api/tools/site-crawler/discover", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ roots, ignore_robots: ignoreRobots }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            setSubmitError(data.error?.message || data.detail || "URL discovery failed");
+            setIsDiscovering(false);
+            return;
+          }
+
+          const discovered: DiscoveredUrl[] = data.urls || [];
+          setDiscoveredUrls(discovered);
+          const autoSelected = new Set(discovered.filter((u) => u.selected).map((u) => u.url));
+          setSelectedUrls(autoSelected);
+          urls = Array.from(autoSelected);
+        } catch (err: unknown) {
+          setSubmitError(err instanceof Error ? err.message : String(err));
+          setIsDiscovering(false);
+          return;
+        } finally {
+          setIsDiscovering(false);
+        }
+      }
     } else {
       urls = rawUrls
         .split("\n")
@@ -235,8 +278,8 @@ export default function SiteCrawlerPage() {
     }
     if (urls.length === 0) {
       setSubmitError(
-        enableDiscovery && discoveredUrls.length > 0
-          ? "Please select at least one discovered URL to crawl."
+        enableDiscovery
+          ? "No crawlable URLs discovered. Check robots.txt or URL spelling."
           : "Please provide at least one target URL."
       );
       return;
@@ -253,7 +296,7 @@ export default function SiteCrawlerPage() {
       const payload: CreateJobRequest = {
         project_name: projectName.trim(),
         bucket: selectedBucket,
-        urls,
+        urls: urls.slice(0, maxPages),
         schema,
         max_pages: maxPages,
         ignore_robots: ignoreRobots,
@@ -270,6 +313,9 @@ export default function SiteCrawlerPage() {
         setSubmitError(data.error?.message || data.detail || "Failed to start extraction job");
       } else {
         setJobStatus(data);
+        setTimeout(() => {
+          progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 150);
         try {
           localStorage.setItem(
             "site_crawler_last_job",
@@ -411,11 +457,13 @@ export default function SiteCrawlerPage() {
 
           {/* Live Progress Card (if job triggered) */}
           {jobStatus && (
-            <JobProgressCard
-              jobStatus={jobStatus}
-              onCancel={handleCancelJob}
-              isCancelling={isCancelling}
-            />
+            <div ref={progressRef} className="scroll-mt-6">
+              <JobProgressCard
+                jobStatus={jobStatus}
+                onCancel={handleCancelJob}
+                isCancelling={isCancelling}
+              />
+            </div>
           )}
 
           {/* Extracted Records Table */}
