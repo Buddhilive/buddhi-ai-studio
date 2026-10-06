@@ -200,6 +200,31 @@ class CrawlService:
             links_count = len(links) if isinstance(links, list) else int(res_item.get("links_count", 0))
             media_count = len(media) if isinstance(media, list) else int(res_item.get("media_count", 0))
 
+            # Extract internal links
+            extracted_internal_links: list[str] = []
+            raw_links = res_item.get("links")
+            if isinstance(raw_links, dict):
+                internal_list = raw_links.get("internal", [])
+                if isinstance(internal_list, list):
+                    for item in internal_list:
+                        if isinstance(item, str):
+                            extracted_internal_links.append(item)
+                        elif isinstance(item, dict) and "href" in item:
+                            extracted_internal_links.append(item["href"])
+            elif isinstance(raw_links, list):
+                for item in raw_links:
+                    if isinstance(item, str):
+                        extracted_internal_links.append(item)
+                    elif isinstance(item, dict) and "href" in item:
+                        extracted_internal_links.append(item["href"])
+
+            if not extracted_internal_links and isinstance(res_item.get("internal_links"), list):
+                for item in res_item["internal_links"]:
+                    if isinstance(item, str):
+                        extracted_internal_links.append(item)
+                    elif isinstance(item, dict) and "href" in item:
+                        extracted_internal_links.append(item["href"])
+
             return CrawlResult(
                 url=request.url,
                 status="completed",
@@ -209,6 +234,7 @@ class CrawlService:
                 status_code=status_code,
                 links_count=links_count,
                 media_count=media_count,
+                internal_links=extracted_internal_links,
                 execution_duration_ms=round(elapsed_ms, 2),
             )
 

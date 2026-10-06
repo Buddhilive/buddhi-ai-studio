@@ -66,6 +66,7 @@ class CrawlResult(BaseModel):
     status_code: int = Field(200, description="HTTP response code of the fetched webpage")
     links_count: int = Field(0, description="Number of discovered hyperlinks on the page")
     media_count: int = Field(0, description="Number of discovered images or media elements")
+    internal_links: list[str] = Field(default_factory=list, description="Discovered internal links on the page")
     execution_duration_ms: float = Field(..., description="Total wall-clock duration in milliseconds")
     error: str | None = Field(None, description="Error message if the crawl failed")
 

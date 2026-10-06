@@ -84,6 +84,8 @@ docker compose up -d
 - Frontend: [http://localhost:54321](http://localhost:54321)
 - Backend: [http://localhost:8765](http://localhost:8765) (docs at `/docs`)
 - SearXNG: [http://localhost:8080](http://localhost:8080)
+- Crawl4AI: [http://localhost:11235](http://localhost:11235)
+- RustFS: [http://localhost:9000](http://localhost:9000) (Console at `http://localhost:9001`)
 
 ### Updating to the Latest Version
 
@@ -138,6 +140,13 @@ Copy [`.env.example`](.env.example) to `.env` at the project root — it's used 
 | `ENABLE_TRACE_LOGGING` | Backend | Persist real prompt/response text per trace in Analytics > Traces |
 | `TRACE_RETENTION_DAYS` | Backend | Days before trace prompt/response text is purged |
 | `ENABLE_PROMETHEUS_METRICS` | Backend | Expose the `/metrics` Prometheus endpoint |
+| `CRAWL4AI_BASE_URL` | Backend | URL of the Crawl4AI service (`http://localhost:11235`) |
+| `CRAWL4AI_API_TOKEN` | Backend | API token for Crawl4AI service |
+| `RUSTFS_ENDPOINT_URL` | Backend | S3 endpoint URL for RustFS object storage (`http://localhost:9000`) |
+| `RUSTFS_ACCESS_KEY` | Backend | S3 access key ID for RustFS |
+| `RUSTFS_SECRET_KEY` | Backend | S3 secret access key for RustFS |
+| `RUSTFS_REGION` | Backend | S3 region (`us-east-1`) |
+| `SITE_CRAWLER_DEFAULT_BUCKET` | Backend | Default S3 bucket for crawler projects (`site-crawler`) |
 
 ## Scripts
 
