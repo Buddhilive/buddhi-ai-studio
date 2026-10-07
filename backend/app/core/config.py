@@ -46,5 +46,35 @@ class Settings(BaseSettings):
     mcp_server_name: str = "buddhi-search"
     mcp_mount_path: str = "/mcp"
 
+    # OpenSandbox
+    opensandbox_server_url: str = "http://localhost:8090"
+    sandbox_default_timeout_s: int = 60
+    sandbox_default_memory_mb: int = 512
+    sandbox_default_allow_network: bool = False
+    sandbox_default_image: str = "python:3.11-slim"
+    sandbox_session_inactivity_ttl_s: int = 1800
+
+    # Crawl4AI
+    crawl4ai_base_url: str = "http://localhost:11235"
+    crawl4ai_api_token: str = "changeme-crawl4ai-token"
+    crawl4ai_timeout_s: float = 60.0
+    crawl4ai_max_payload_bytes: int = 5_242_880  # 5MB
+
+    # RustFS Object Storage
+    rustfs_endpoint_url: str = "http://localhost:9000"
+    rustfs_access_key: str = "buddhi-rustfs"
+    rustfs_secret_key: str = "changeme-rustfs-secret-key"
+    rustfs_region: str = "us-east-1"
+
+    # Site Crawler Tool
+    site_crawler_default_bucket: str = "site-crawler"
+    site_crawler_crawl_concurrency: int = 3
+    site_crawler_max_pages_limit: int = 1000
+    site_crawler_default_max_pages: int = 100
+    site_crawler_input_token_ratio: float = 0.6
+    site_crawler_max_output_tokens: int = 2048
+    site_crawler_discovery_timeout_s: float = 30.0
+    site_crawler_max_discovered_urls: int = 10000
+
 
 settings = Settings()

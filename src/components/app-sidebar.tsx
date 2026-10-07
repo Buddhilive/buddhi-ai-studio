@@ -21,6 +21,8 @@ import {
   LayoutDashboardIcon,
   ChartColumnIcon,
   SettingsIcon,
+  BoxIcon,
+  GlobeIcon,
 } from "lucide-react"
 
 // This is sample data.
@@ -74,6 +76,14 @@ export const navData = {
       ),
     },
     {
+      title: "Sandbox",
+      url: "/sandbox",
+      icon: (
+        <BoxIcon
+        />
+      ),
+    },
+    {
       title: "Models",
       url: "#",
       icon: (
@@ -96,13 +106,46 @@ export const navData = {
       ),
     },
   ],
+  toolsAndApps: [
+    {
+      title: "Web Tools",
+      url: "#",
+      icon: (
+        <GlobeIcon
+        />
+      ),
+      items: [
+        {
+          title: "Crawler Playground",
+          url: "/crawler",
+        },
+        {
+          title: "Site Crawler",
+          url: "/tools/site-crawler",
+        },
+      ],
+    },
+  ],
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
+
+  const isSubActive = (subUrl: string) => {
+    if (subUrl === "#") return false
+    if (pathname === subUrl) return true
+    if (subUrl.startsWith("/tools/") && pathname.startsWith(subUrl)) return true
+    return false
+  }
+
   const navMain = navData.navMain.map((item) => ({
     ...item,
-    isActive: item.items?.some((sub) => sub.url !== "#" && pathname === sub.url),
+    isActive: item.items?.some((sub) => isSubActive(sub.url)),
+  }))
+
+  const toolsAndApps = navData.toolsAndApps.map((item) => ({
+    ...item,
+    isActive: item.items?.some((sub) => isSubActive(sub.url)),
   }))
 
   return (
@@ -111,7 +154,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <TeamSwitcher teams={navData.teams} />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={navMain} />
+        <NavMain items={navMain} label="Platform" />
+        <NavMain items={toolsAndApps} label="Tools and Apps" />
         {/* <NavProjects projects={data.projects} /> */}
       </SidebarContent>
       <SidebarFooter>
@@ -121,3 +165,4 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     </Sidebar>
   )
 }
+

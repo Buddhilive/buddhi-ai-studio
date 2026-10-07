@@ -8,3 +8,5 @@ with this index capped at ~200 lines. New entries route through the
 `/remember` workflow, or get appended the same way as before by `/plan` or
 other harness work — directly into the matching topic file, with a pointer
 added here.
+
+- Tool output storage = RustFS container, zip download to PC → tech-decisions.md

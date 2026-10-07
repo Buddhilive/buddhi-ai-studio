@@ -16,6 +16,58 @@ services:
       retries: 5
     restart: unless-stopped
 
+  opensandbox:
+    image: docker.io/opensandbox/server:latest
+    container_name: buddhi-opensandbox
+    ports:
+      - "8090:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./sandbox/.sandbox.toml:/etc/opensandbox/config.toml:ro
+    environment:
+      OPENSANDBOX_CONFIG: /etc/opensandbox/config.toml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: buddhi-crawl4ai
+    ports:
+      - "11235:11235"
+    shm_size: '1gb'
+    environment:
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-changeme-crawl4ai-token}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11235/health || wget -qO- http://localhost:11235/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: buddhi-rustfs
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-buddhi-rustfs}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-changeme-rustfs-secret-key}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_CONSOLE_ENABLE: "true"
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/health || wget -qO- http://localhost:9000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   backend:
     image: buddhilive/ai-studio-service:${AI_STUDIO_VERSION:-latest}
     build:
@@ -32,8 +84,20 @@ services:
       ENABLE_TRACE_LOGGING: ${ENABLE_TRACE_LOGGING:-true}
       TRACE_RETENTION_DAYS: ${TRACE_RETENTION_DAYS:-30}
       SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080}
+      OPENSANDBOX_SERVER_URL: ${OPENSANDBOX_SERVER_URL:-http://opensandbox:8080}
+      CRAWL4AI_BASE_URL: ${CRAWL4AI_BASE_URL:-http://crawl4ai:11235}
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-changeme-crawl4ai-token}
+      RUSTFS_ENDPOINT_URL: ${RUSTFS_ENDPOINT_URL:-http://rustfs:9000}
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-buddhi-rustfs}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-changeme-rustfs-secret-key}
     depends_on:
       searxng:
+        condition: service_healthy
+      opensandbox:
+        condition: service_healthy
+      crawl4ai:
+        condition: service_healthy
+      rustfs:
         condition: service_healthy
     restart: unless-stopped
 
@@ -49,3 +113,7 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  rustfs-data:
+

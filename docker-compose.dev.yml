@@ -15,3 +15,59 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  opensandbox:
+    image: docker.io/opensandbox/server:latest
+    container_name: buddhi-opensandbox-dev
+    ports:
+      - "8090:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./sandbox/.sandbox.toml:/etc/opensandbox/config.toml:ro
+    environment:
+      OPENSANDBOX_CONFIG: /etc/opensandbox/config.toml
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: buddhi-crawl4ai-dev
+    ports:
+      - "11235:11235"
+    shm_size: '1gb'
+    environment:
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-changeme-crawl4ai-token}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11235/health || wget -qO- http://localhost:11235/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: buddhi-rustfs-dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-buddhi-rustfs}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-changeme-rustfs-secret-key}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_CONSOLE_ENABLE: "true"
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/health || wget -qO- http://localhost:9000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  rustfs-data:
+

@@ -42,3 +42,30 @@ export async function proxyBackendJson(path: string, init?: RequestInit): Promis
     );
   }
 }
+
+/**
+ * Proxies a binary or streamed response from FastAPI backend: forwards
+ * status code, Content-Type, Content-Disposition, and streaming body
+ * without in-memory buffering.
+ */
+export async function proxyBackendStream(path: string, init?: RequestInit): Promise<Response> {
+  try {
+    const backendRes = await backendFetch(path, init);
+    const headers = new Headers();
+    const contentType = backendRes.headers.get("content-type");
+    if (contentType) headers.set("content-type", contentType);
+    const disposition = backendRes.headers.get("content-disposition");
+    if (disposition) headers.set("content-disposition", disposition);
+
+    return new Response(backendRes.body, {
+      status: backendRes.status,
+      headers,
+    });
+  } catch (error) {
+    console.error(`[backend stream proxy] ${init?.method ?? "GET"} ${path} failed:`, error);
+    return Response.json(
+      { error: "Could not reach the backend service. Is it running?" },
+      { status: 502 }
+    );
+  }
+}
