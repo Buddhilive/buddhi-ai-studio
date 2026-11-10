@@ -18,7 +18,7 @@
 - **Spec-Driven Development (SDD)**: Features follow the SDD lifecycle:
   1. `/specify` — create feature branch and refine `spec.md`
   2. `/plan` — synthesize technical architecture into `plan.md`
-  3. `/tasks` — break down tasks by user story in `tasks.md`
+  3. `/spec-tasks` — break down tasks by user story in `tasks.md`
   4. `/implement` — execute tasks story by story
   5. `/verify` — prove working behavior with real test evidence
 - **Lightweight Planning**: Use `/quick-plan` for quick, non-SDD changes.

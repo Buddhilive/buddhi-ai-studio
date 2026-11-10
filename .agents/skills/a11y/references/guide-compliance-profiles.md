@@ -1,0 +1,81 @@
+# A11y Compliance Profiles
+
+> **Scope:** AI Generation & Auditing
+
+> [!NOTE]
+> **Normative vs A11Y.md rules.** Each profile mixes two layers: **WCAG Success Criteria** at its target level (cited by SC number — skipping one requires `EXCEPTIONS.md`) and **A11Y.md rules†** — this standard's stricter ergonomic policy (marked †; relaxing one is a product decision, recorded in `A11Y-DECISIONS.md`). WCAG defines **no minimum font size** at any level, and Level A defines **no contrast or target-size criteria** — every value in those positions below is an A11Y.md rule.
+
+---
+
+## The Profiles
+
+| Profile | Target Standard | Primary Use Case | Focus |
+| :--- | :--- | :--- | :--- |
+| **🛡️ Shield (AAA)** | WCAG 2.2 AAA | Regulated industries, specialized software | Ultimate inclusivity, zero barriers |
+| **⚖️ Standard (AA)** | WCAG 2.2 AA | Production web apps (Default) | Legal compliance, broad usability |
+| **🚀 Launchpad (A)** | WCAG 2.2 A | MVPs, internal tools, prototypes | Absolute minimum baseline |
+
+---
+
+## 1. 🛡️ Shield Profile (Level AAA)
+*The highest standard of web accessibility.*
+
+**When to use:** Applications for government, healthcare, education, or specialized audiences with severe disabilities.
+
+### Key Requirements (Beyond AA)
+- **Contrast (SC 1.4.6):** Text must have a **7:1** ratio against its background. Large text, at least 24px or 18.66px bold (core §0.1), must have **4.5:1**. UI components remain at 3:1 (SC 1.4.11 — WCAG has no AAA non-text contrast criterion).
+- **No Exceptions for Density:** Even tiny badges or labels must meet the 7:1 ratio.
+- **Targets (SC 2.5.5):** Clickable elements must be at least **44×44px** — the AAA minimum, with the SC's own exceptions (equivalent control, inline-in-text target, user-agent control, essential presentation). **A11Y.md rule†:** design to **48×48px** (Material norm) and allow no density exceptions under Shield.
+- **Focus (SC 2.4.13 + A11Y.md rule†):** The focus indicator must be highly visible — solid 2px outline with 3:1 contrast against the background (A11Y.md rule; the SC's normative 3:1 is measured between the focused/unfocused states) — and not rely on default browser styles.
+- **Timeouts:** Users must be able to complete tasks without arbitrary time limits, or have mechanisms to easily extend sessions.
+
+---
+
+## 2. ⚖️ Standard Profile (Level AA)
+*The global benchmark for legal compliance (ADA, EAA).*
+
+**When to use:** This is the **default**. Use for any production software, public-facing website, or commercial product.
+
+### Key Requirements
+- **Contrast (SC 1.4.3, 1.4.11):** Text must have a **4.5:1** ratio. Large text, at least 24px or 18.66px bold (core §0.1), must have **3:1**. UI elements (borders, icons) must have **3:1**.
+- **Targets (SC 2.5.8):** Clickable elements must be at least **24×24px** — the AA normative floor, with exceptions for inline links and spaced targets. **A11Y.md rule†:** design to **44×44px** (Apple HIG / Material norm).
+- **Focus (SC 2.4.7):** Focus must be clearly visible.
+- **Semantic HTML & ARIA:** Strict adherence to APG patterns for complex components.
+- **Responsiveness (SC 1.4.4, 1.4.10):** Text must resize to 200% without loss of content or function, and content must reflow at 320 CSS px width (≈400% zoom) without two-dimensional scrolling.
+
+---
+
+## 3. 🚀 Launchpad Profile (Level A)
+*The absolute floor. Below this, the software is considered broken.*
+
+**When to use:** Rapid prototyping, internal admin panels with controlled audiences, or initial MVP builds.
+
+> [!WARNING]  
+> The Launchpad profile does **NOT** mean "no accessibility". It still requires semantic HTML, keyboard operability, and screen reader support. It only relaxes strict visual criteria.
+
+### Relaxed Criteria (Compared to AA)
+- **Contrast (A11Y.md rule†):** Only a baseline **3:1** ratio is enforced to prevent complete illegibility. (Level A has no contrast criterion — this floor is this standard's policy, not WCAG.)
+- **Targets (A11Y.md rule†):** Target sizes can be reduced to **24×24px**, provided there is some spacing. (Level A has no target-size criterion; 24×24 mirrors the AA floor of SC 2.5.8.)
+- **Typography (A11Y.md rule†):** Fonts down to **10px** are tolerated without strict contrast mitigation, though highly discouraged. (WCAG defines no minimum font size.)
+
+### Immutable Rules (Never Relaxed)
+- ❌ `div` or `span` with `onClick` (Keyboard trap/unreachable)
+- ❌ Missing `alt` on critical images
+- ❌ Missing `label` on form inputs
+- ❌ Modal without focus trap
+- ❌ Changes in state without `aria-live` or role alerts
+
+Any use of the Launchpad profile in production should be documented in the `EXCEPTIONS.md` file as technical debt to be upgraded to Standard (AA).
+
+## 4. Brazil Mapping (ABNT NBR 17225 and NBR 17060)
+
+When the product serves Brazil, the declared profile also states its NBR 17225 level:
+
+| Profile | NBR 17225 level |
+| :--- | :--- |
+| ⚖️ Standard (AA) | **Regular** — all 96 requirements (declared equivalent to WCAG 2.2 A+AA) |
+| 🛡️ Shield (AAA) | **Plena** — requirements + all 50 recommendations; each unmet recommendation carries a reasonable justification in `EXCEPTIONS.md` |
+
+Structure of the norm and the Annex A critical-items checklist: [Governance §6.1](guide-governance.md).
+
+For a **mobile app** — native, hybrid or web app on phones and tablets — the reference is **ABNT NBR 17060:2022**, which defines no conformance levels. This standard maps it the same way: ⚖️ Standard = every *requirement*; 🛡️ Shield = requirements plus every *recommendation*, each unmet one justified in `EXCEPTIONS.md`. What the norm asks beyond WCAG 2.2, and the sources: [Platform-Native § Brazil](guide-platform-native.md).

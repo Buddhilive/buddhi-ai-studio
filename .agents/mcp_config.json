@@ -2,7 +2,10 @@
   "mcpServers": {
     "buddhi": {
       "command": "buddhi-mcp",
-      "args": [],
+      "args": [
+        "--root",
+        "C:\\DevDojo\\Buddhi\\buddhi-ai-studio"
+      ],
       "env": {}
     }
   }

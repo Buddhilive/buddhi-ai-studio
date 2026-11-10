@@ -1,12 +1,11 @@
+---
+okf_version: "0.2"
+---
+
 # Memory Index
 
-No entries yet. This is a pure index into `memory/user-preferences.md`,
-`memory/project-conventions.md`, `memory/tech-decisions.md`, and
-`memory/feedback-history.md` — each line here is a short pointer (topic +
-one-line summary + which file it's detailed in), kept under ~150 characters,
-with this index capped at ~200 lines. New entries route through the
-`/remember` workflow, or get appended the same way as before by `/plan` or
-other harness work — directly into the matching topic file, with a pointer
-added here.
-
-- Tool output storage = RustFS container, zip download to PC → tech-decisions.md
+* [2026-10-06 (spec 006): User-generated tool output (e.g](decisions/mem-decision-2026-10-06-spec-006-user-generated-tool-output-e-g.md) - 2026-10-06
+* [communication style, workflow preferences — get appended ...](preferences/mem-preference-communication-style-workflow-preferences-get-appended.md) 
+* [get appended here by `/remember` or other harness work, o...](decisions/mem-decision-get-appended-here-by--remember-or-other-harness-work-o.md) - g
+* [naming, structure, process — get appended here by `/remem...](conventions/mem-convention-naming-structure-process-get-appended-here-by--remem.md) -
+* [this project — what to avoid, what to keep doing — get ap...](feedback/mem-feedback-this-project-what-to-avoid-what-to-keep-doing-get-ap.md) - this

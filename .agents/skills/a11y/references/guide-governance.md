@@ -1,0 +1,128 @@
+# A11y Governance & Compliance Strategy
+
+> Scope: Static verification, VPAT strategy, ADA/EAA compliance, EN 301 549, and external audit readiness.
+
+## 1. Static Verification (The Engineering Minimum)
+Primary verification does not consist of dictating rigid rules in a *specific pipeline*, but holding the development environment (Be it the Dev or the AI running in real-time) accountable for fast static validation tests.
+- **Code Standard:** The code *must* necessarily pass through linters or accessibility-focused evaluators (like `eslint-plugin-jsx-a11y` or the `axe` engine) without displaying critical/serious violations before code consolidation.
+- **This standard's own tools:** the repository ships two optional, dependency-free scripts in [`tools/`](https://github.com/fecarrico/A11Y.md/tree/main/tools): [`verify-a11y.py`](https://raw.githubusercontent.com/fecarrico/A11Y.md/main/tools/verify-a11y.py) runs against **your project** — checking that the artifacts exist, that `REPORT.md` is newer than the last interface change, and that the source is free of the Section 6 anti-patterns; [`lint-standard.py`](https://raw.githubusercontent.com/fecarrico/A11Y.md/main/tools/lint-standard.py) runs against **copies or forks of this standard**, checking language parity, loading triggers and links. Running them is never a requirement of the standard — `A11Y.md` is portable markdown — but a gate that fails a build is stronger than a rule someone has to remember.
+- **Decoupling:** Do not try to "write robust logic for accessible components and try to fix them": adopt agnostic libraries (Headless UI) whenever native HTML semantics do not cover the feature requirements.
+
+### 1.1. Default configuration is not coverage
+
+A clean axe run means "no violation among the rules that were enabled". Two defaults are worth correcting:
+
+- **Enable the experimental rules that carry a Success Criterion.** `label-content-name-mismatch` detects an accessible name that does not contain the visible text — an **SC 2.5.3 Level AA failure** that breaks voice control — and it ships **disabled by default**, in axe-core and in the browser extension alike. Turn it on: `axe.run(context, { rules: { 'label-content-name-mismatch': { enabled: true } } })`, or check *Experimental rules* in the extension's settings.
+- **Resolve the linter × engine conflict instead of silencing it.** `scrollable-region-focusable` (axe) requires a focus stop on a container the user can scroll but not tab into; `no-noninteractive-tabindex` (`eslint-plugin-jsx-a11y`) flags that exact `tabIndex`. Following both literally is impossible, and the path of least resistance — disabling the ESLint rule — removes a real guard. Configure it instead:
+  ```jsonc
+  // .eslintrc — allow the focus stop axe requires, keep the rule everywhere else
+  "jsx-a11y/no-noninteractive-tabindex": ["error", { "roles": ["tabpanel", "region"], "tags": [], "allowExpressionValues": true }]
+  ```
+  Keep `tabpanel` in `roles`: it is the plugin's own default, and a tab panel that opens with text needs the stop ([Tabs & Accordions](guide-tabs-accordion.md), rule 2). A list that names only `region` replaces the default and drops it.
+  And remember the axe rule is **conditional**: the focus stop belongs only on regions whose content actually overflows. Applying it to every scroll container adds tab stops that lead nowhere (see *Focus Traps Nobody Asked For*, `A11Y.md` §6).
+
+> **A CI gate is a form of independent verification.** *Independent Verification* (`A11Y.md` §2) asks that the evidence not be authored solely by the agent that wrote the code. A pipeline check satisfies that for the mechanical layer by construction — it runs outside the session, against the artifact, with no memory of the decisions that produced it. It does not, however, satisfy the human checkpoints, and it does not raise the report's declared independence level for anything a machine cannot test.
+
+### 1.2. Independent Verification — who signs the evidence
+
+*Independent Verification* (`A11Y.md` §2) exists because self-review re-runs the reasoning that produced the defect. The evidence: this standard's own Orphaned ARIA defect survived the generating agent, axe **and** Lighthouse, surfacing only in an independent test ([a11y-md-ai-test](https://github.com/mjepis7/a11y-md-ai-test), by Maria Eduarda Iwashita); and models find more bugs in another model's code than in their own (Greptile, [*Models are worse at reviewing their own code*](https://www.greptile.com/blog/model-inversion), 2026 — two 500-PR datasets, the pattern inverts both ways).
+
+- **cross-agent** — a different model breaks the correlation between the defects generated and the defects looked for. The strongest form.
+- **fresh-context** — the same model *without the conversation that produced the code*: removes the memory of having decided. The floor everywhere — it costs a new chat over the same project, never a new tool.
+- **self-reported** ⚠️ — honest and visible, never sufficient: it re-runs the exact failure mode the rule exists to break. Ceiling: ⚠️ CONDITIONAL.
+
+**Scope and cost of the verifier.** The verifier reproduces the Section 7 checkpoints that do not need a human, on the files the change touched — it does not re-audit the product from scratch, and it does not need the strongest model available: a smaller model in its own session is a valid *cross-agent* verifier, and usually the cheaper one. Field case (a design system of 81 components, 2026-09-30): a fresh-context verifier on the generating model was cut by the plan's usage limit after 24 minutes and delivered nothing; relaunched on a smaller model it finished in 40 minutes, found 8 defects the generator had missed, and the declared level went *up*, to cross-agent. Bound the verifier to the checkpoints, and have it remove what it starts — servers, scratch scripts — before it reports.
+
+The declaration is trust-based and still auditable: `REPORT.md` names *who* verified, and `verify-a11y.py` enforces the ceiling mechanically (a self-reported ✅ PASS fails the gate). None of it replaces the human checkpoints — a second agent can resolve a reference between files; it cannot hear a screen reader.
+
+### 1.3. The static gate — and what to say when it cannot run
+
+`tools/verify-a11y.py` is the mechanical half of Release Evidence. It does not judge whether the interface is accessible; it checks whether the process the standard demands actually happened: that `REPORT.md` exists and is newer than the last interface change, that it does not declare PASS over open checkpoints or on self-reported verification, that `EXCEPTIONS.md` entries carry owner, approver and expiry, and that the source is free of the Section 6 anti-patterns a text search can catch. Everything else — axe, ESLint, the human checkpoints — looks at the interface. Only the gate looks at the evidence — and it does not take the evidence's word: every contrast pair recorded in `REPORT.md` is recomputed with the WCAG formula, and a ratio that does not match, or a pass marked below its floor, fails the build.
+
+**What the source scan is, and is not.** The gate does not replace axe; it reads what axe cannot see — handlers in source (`<div onClick>`, `@click`, `on:click`, `(click)`), CSS intent (`outline: none`), a placeholder standing in for a label, a composite ARIA parent announced without its children, redundant roles, an image whose `alt` is cancelled by `aria-hidden`, an overlay vendor's script. It cannot see focus management in a modal, text over video, a parallel machine-facing copy, a scroll container that does not overflow, or content parked at `opacity: 0` — those five anti-patterns of Section 6 stay with review and with the human checkpoints.
+
+**Three outcomes, all recorded.** The *Static gate* field of `REPORT.md` takes exactly one: `PASS` with the date; `FAIL` with the error count, and the errors fixed or moved to `EXCEPTIONS.md` before delivery; or `NOT RUN` with the exact reason. The script prints the line to record at the end of every run. What the project already recorded does not fail it: an exception in force, signed by a person, whose *Gate finding* field names the check and each file, or a decision in `A11Y-DECISIONS.md` that ends with the `(gate: …)` marker, turns the finding it covers into a registered line, printed on every run and never counted as an error. When the exception expires, the finding fails again.
+
+**When it cannot run, say so twice.** Agents lose the gate silently far more often than they fail it: a permission prompt denied, a sandbox without a shell, a command allowlist that does not match the invocation. In this project's own benchmark the script shipped in both treatment arms and was denied in six runs — and no journey said so until the deviations audit found it. So the rule is disclosure in two places: the report field, and the delivery message itself, in words the user can act on. For example: *"The A11Y.md static gate (`verify-a11y.py`) did not run: the shell command was denied. It would have checked that the report is current, does not self-approve, and that the source carries none of the §6 anti-patterns it can detect. This delivery is unverified by the gate."* Telling the user is what turns a silent denial into a decision they own.
+
+**Wiring it in CI.** Pin to a release tag, never to `main`, and start with `--warn-only`; once the team stops seeing false positives, drop it and the gate fails the build — stronger than any rule an agent has to remember. The snippet and every check's definition live in [`tools/README.md`](https://raw.githubusercontent.com/fecarrico/A11Y.md/main/tools/README.md).
+
+## 2. Descriptive Evidence (The "Why")
+When creating custom complex widgets, the developer (or AI) must include a comment block explaining the accessibility strategy:
+- What is the focus order?
+- How are states communicated?
+- What is the fallback for non-JS environments?
+
+## 3. Visual Language Constraints
+- **Color:** Never communicate state (Valid/Invalid/Warning) using only color. An accompanying icon or text description is mandatory.
+- **Contrast:** Brand colors that fail 4.5:1 ratio must be adjusted for UI elements or paired with a high-contrast alternative.
+
+## 4. Audits and Legal Compliance (ADA/EAA Readiness)
+To prepare subsystems for external certification and audit:
+1. **Inventory:** Consolidate a list or storybook of the key visual components of the flow and their behaviors with assistive technologies.
+2. **Keyboard Path:** Prevent Dead-ends through clear and planned mapping of the visual layout order (`Tab`).
+3. **Standard Audit:** The checklist in [**`templates/REPORT.md`**](../templates/REPORT.md) **MUST** be operated as "Definition of Done" **before any delivery to an end user** — a published build, a deploy, a shared artifact, a tag — not only at a "final delivery" that continuously delivered projects never reach (see *Release Evidence*, `A11Y.md` §2). A preview shared for someone else's review — the owner's included — is a delivery too: calling the project a lab, a draft or private does not exempt it, and item 4 keeps the cost at one living report, not one per publish.
+4. **One living report, not one per publish:** the report tracks the **interface**, not the release count. If nothing changed since the last one, it stands as is. When the interface changes, update the date and revisit only the entries that change affects: any checkpoint whose evidence the change invalidates goes back to `[ ]` or `[~]` until re-verified. Human checkpoints (screen reader, color simulator) keep their `[x]` and the date of the session that produced them, and are re-run when the flow they covered changes.
+
+## 4.1. Formal evaluation (WCAG-EM) — when the project will be audited
+
+Not every product goes through an external audit, and this standard does not assume it will. But **when it does**, `REPORT.md` alone is not the right instrument: it tracks a *feature*, while an audit evaluates an *entire site or application*. The two are complementary, and the gap between them shows up late — usually when the Accessibility Declaration required by Section 6 has to be issued.
+
+Where a formal audit, third-party evaluation or public declaration is on the horizon, anchor the work in the W3C's official methodology, [WCAG-EM](https://www.w3.org/TR/WCAG-EM/):
+
+1. **Define the scope:** which URLs/screens, which target level, which accessibility-supported technologies.
+2. **Explore:** identify page types, essential functionality, technologies in use.
+3. **Select the sample:** structured pages (one of each type, plus complete flows) plus a randomly selected sample — auditing "the main pages" without a declared sampling method is not an evaluation, it is an opinion.
+4. **Audit the sample** against every criterion at the target level.
+5. **Report:** use the W3C-WAI [Evaluation Report Template](https://www.w3.org/WAI/test-evaluate/report-template/) or the [WCAG-EM Report Tool](https://www.w3.org/WAI/eval/report-tool), which produce the format auditors and regulators expect to read.
+
+The project's accumulated `REPORT.md` files are the **provenance evidence** for that audit: they show what was verified, when, by whom, and what stayed open. A repository with a history of reports arrives at formal evaluation with ballast; one without starts from zero.
+
+## 4.2. The public accessibility statement (`ACCESSIBILITY.md`)
+
+`REPORT.md` and `EXCEPTIONS.md` are written for the people who build and audit the product. The accessibility statement is written for the people who use it: what the product promises, which environments were tested, what is known to be broken and how to get around it, and who answers when something is. Since October 2026 GitHub shows a file named `ACCESSIBILITY.md` — at the repository root, in `.github/` or in `docs/` — as an **Accessibility** tab on the repository page, beside the README and the security policy. The same text is the public declaration Section 6 asks for under the EAA and Section 6.1 under the LBI.
+
+The template is [`templates/ACCESSIBILITY.md`](../templates/ACCESSIBILITY.md). It is **derived**, never original: every section has a source artifact, and the agent fills it from that source.
+
+| Statement section | Source |
+| :--- | :--- |
+| Declared status, standard version, verification level | the validation context of `REPORT.md` |
+| Supported environments | `REPORT.md` §3: the screen reader + browser pairs that actually ran, and nothing else |
+| Known barriers | every open `EXCEPTIONS.md` entry and every `[ ]` / `[!]` checkpoint in the report, in plain language, with the workaround |
+| How to report | the project's own channel and its first-response time |
+| Owner and review date | a person, and the date of the last event that changed the report |
+
+Three rules follow:
+
+- **Never ahead of the evidence.** The statement carries the report's status, ⚠️ CONDITIONAL included, and says what is missing. A statement that reads better than its report is the public form of marking `[x]` without evidence.
+- **Known barriers are published.** The exceptions log already records them as a versioned project record, and the statement repeats them in words a user can act on. A team that wants to withhold one takes that decision in the open, with its legal counsel. The agent never omits on its own. The W3C's guidance on [developing an accessibility statement](https://www.w3.org/WAI/planning/statements/) asks for the same: the known limitations, each with its alternative.
+- **A person signs.** The agent drafts the statement when the §2.1 event fires and a report exists. The owner named in it reviews and publishes. It is re-issued on events: a status change in the report, an exception opened or closed, a release.
+
+One optional line tells the reader how the promise is kept: *"Interfaces in this project follow [A11Y.md](https://github.com/fecarrico/A11Y.md) version [x.y.z] under the Standard profile."* It names the standard, its version and its URL: an auditor knows which rules the artifacts answer to, the next agent that reads the repository knows where the rules are, and a code search for the URL finds the adoption.
+
+## 5. Reporting & Liability (VPAT Strategy)
+Projects targeting the US market must be Section 508 compliant:
+- **VPAT Creation:** Maintain a technical document that records which WCAG criteria are fully or partially supported.
+- **Traceability:** Each major feature must have a comment in the code citing which WCAG criterion is being respected.
+
+## 6. European Compliance (EN 301 549)
+For EAA compliance:
+- **Interoperability:** Ensure the software does not prevent the use of third-party assistive technologies.
+- **Accessibility Declaration:** Maintain a public accessibility page describing the features and the achieved compliance level. The file, and the artifact each of its sections is read from: §4.2.
+
+## 6.1. Brazilian Compliance (ABNT NBR 17225 / NBR 17060 / LBI)
+
+For products serving a Brazilian audience:
+
+- **ABNT NBR 17225:2025** — *Accessibility in web content and applications: requirements* (March 2025) — is the Brazilian technical standard and the ballast for **article 63 of the LBI (Lei 13.146/2015)**, which mandates accessibility for the sites of public bodies and of companies with presence in Brazil. It organizes **146 items — 96 requirements + 50 recommendations — in 16 thematic groups**, each mapped to a WCAG 2.2 SC, and defines two conformance levels:
+  - **Regular** = all 96 requirements — declared equivalent to WCAG 2.2 A+AA. Profile mapping: **Standard (AA) ≈ regular**.
+  - **Plena** = requirements + all 50 recommendations, where an unmet recommendation demands a *reasonable justification* — the exact mechanics of this standard's `EXCEPTIONS.md` / `A11Y-DECISIONS.md`. Profile mapping: **Shield (AAA) ≈ plena**.
+- **Annex A — the critical-items list**, the acceptance checklist in Brazilian public procurement: CAPTCHA with an alternative modality · **facial recognition / biometrics with an accessible alternative route** · content only on hover/focus · content inserted via CSS · third-party content, with the user warned · custom components · **downloadable (non-HTML) files that are themselves accessible** · layout tables · markup per specification. Three of these go beyond day-to-day WCAG practice: biometrics, files, and CSS-injected content.
+- **Annex B** carries ten functional-performance statements (from EN 301 549) — `REPORT.md` §7 offers them as an optional section serving NBR, EN 301 549 and VPAT at once.
+- **Official validators:** the formal diagnosis for the São Paulo digital-accessibility seal — and the federal guidance — converge on three engines: **AMAWeb**, **AccessMonitor** and **WAVE**. A clean axe run covers most of what they measure, but a Brazilian destination runs the three before any formal claim (the seal requires their diagnosis dated within 10 days).
+- **ABNT NBR 17060:2022** — *Accessibility in mobile device applications: requirements* (October 2022) — is the mobile sibling: native, hybrid and web apps on smartphones and tablets, sites opened on a phone included, under the same article 63 of the LBI. 54 requirements and recommendations in four groups on a **WCAG 2.1** base — a build conforming to this standard already satisfies nearly all of it. The remainder (label before the field, step counters, system accessibility settings, time limits, no stall in assistive-technology navigation, flashing with a warning), the profile mapping and the sources are in [Platform-Native § Brazil](guide-platform-native.md). With a mobile destination, `REPORT.md` names NBR 17060 beside the profile.
+- **Practical effect:** with a Brazilian destination, `REPORT.md` declares the NBR level targeted (regular/plena) alongside the compliance profile, and Annex A is treated as a named checklist. For sign-language users, see [Sign Language & Libras](guide-sign-language-br.md).
+
+## 7. Compliance Versioning
+Current focused standard: **WCAG 2.2 AA** | **EN 301 549** | **ABNT NBR 17225** (Brazil, where applicable).
+Deviations from legal requirements due to severe UI/UX, native platform, or base architecture limitations, **MUST** be justified mandatorily using the matrix file on the page: [**`templates/EXCEPTIONS.md`**](../templates/EXCEPTIONS.md). All these points must have compensatory actions.

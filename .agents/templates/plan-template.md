@@ -57,7 +57,7 @@ Verify that the planned architecture and changes comply with project rules, comm
 ├── data-model.md        # Phase 1 output (/plan command)
 ├── quickstart.md        # Phase 1 output (/plan command)
 ├── contracts/           # Phase 1 output (/plan command)
-└── tasks.md             # Phase 2 output (/tasks command - NOT created by /plan)
+└── tasks.md             # Phase 2 output (/spec-tasks command - NOT created by /plan)
 ```
 
 ### Source Code (repository root)
