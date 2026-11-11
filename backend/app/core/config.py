@@ -54,6 +54,7 @@ class Settings(BaseSettings):
 
     # OpenSandbox
     opensandbox_server_url: str = "http://localhost:8090"
+    opensandbox_api_key: str = "changeme-opensandbox-key"
     sandbox_default_timeout_s: int = 60
     sandbox_default_memory_mb: int = 512
     sandbox_default_allow_network: bool = False

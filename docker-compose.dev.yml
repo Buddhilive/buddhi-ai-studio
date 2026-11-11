@@ -26,6 +26,7 @@ services:
       - ./sandbox/.sandbox.toml:/etc/opensandbox/config.toml:ro
     environment:
       OPENSANDBOX_CONFIG: /etc/opensandbox/config.toml
+      OPENSANDBOX_SERVER_API_KEY: ${OPENSANDBOX_API_KEY:-changeme-opensandbox-key}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
       interval: 10s

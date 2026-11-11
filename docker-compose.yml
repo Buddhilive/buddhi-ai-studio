@@ -26,6 +26,7 @@ services:
       - ./sandbox/.sandbox.toml:/etc/opensandbox/config.toml:ro
     environment:
       OPENSANDBOX_CONFIG: /etc/opensandbox/config.toml
+      OPENSANDBOX_SERVER_API_KEY: ${OPENSANDBOX_API_KEY:-changeme-opensandbox-key}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
       interval: 10s
@@ -85,6 +86,7 @@ services:
       TRACE_RETENTION_DAYS: ${TRACE_RETENTION_DAYS:-30}
       SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080}
       OPENSANDBOX_SERVER_URL: ${OPENSANDBOX_SERVER_URL:-http://opensandbox:8080}
+      OPENSANDBOX_API_KEY: ${OPENSANDBOX_API_KEY:-changeme-opensandbox-key}
       CRAWL4AI_BASE_URL: ${CRAWL4AI_BASE_URL:-http://crawl4ai:11235}
       CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-changeme-crawl4ai-token}
       RUSTFS_ENDPOINT_URL: ${RUSTFS_ENDPOINT_URL:-http://rustfs:9000}

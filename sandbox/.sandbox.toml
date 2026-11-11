@@ -3,18 +3,11 @@
 [server]
 host = "0.0.0.0"
 port = 8080
+api_key = "changeme-opensandbox-key"
 
 [runtime]
-provider = "docker"
+type = "docker"
+execd_image = "opensandbox/execd:latest"
 
-[runtime.docker]
-docker_host = "unix:///var/run/docker.sock"
-default_image = "python:3.11-slim"
-working_dir = "/workspace"
-
-[security]
-default_network_egress = false
-default_timeout_seconds = 60
-default_memory_limit_mb = 512
-default_cpu_limit = 1.0
-max_timeout_seconds = 600
+[docker]
+network_mode = "bridge"

@@ -59,6 +59,7 @@ class SandboxService:
         return ConnectionConfig(
             domain=domain,
             protocol=protocol,
+            api_key=settings.opensandbox_api_key,
             request_timeout=timedelta(seconds=settings.sandbox_default_timeout_s + 10),
         )
 
@@ -100,7 +101,10 @@ class SandboxService:
                 error="HTTP client not initialized",
             )
         try:
-            resp = await self._http_client.get(f"{server_url.rstrip('/')}/health")
+            headers = {}
+            if settings.opensandbox_api_key:
+                headers["OPEN-SANDBOX-API-KEY"] = settings.opensandbox_api_key
+            resp = await self._http_client.get(f"{server_url.rstrip('/')}/health", headers=headers)
             if resp.status_code < 400:
                 return SandboxHealthStatus(
                     status="healthy",
