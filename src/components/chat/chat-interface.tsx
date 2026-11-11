@@ -68,6 +68,7 @@ import { useChat } from "@ai-sdk/react";
 import { CheckIcon } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AgentMessagePart } from "@/components/chat/agent-parts";
 import { toast } from "sonner";
 const AttachmentItem = ({
     attachment,
@@ -219,10 +220,17 @@ export default function ChatInterface() {
         setModelSelectorOpen(false);
     }, []);
 
-    const isSubmitDisabled = useMemo(
-        () => !model || !(text.trim() || status) || status === "streaming",
-        [text, status, model]
-    );
+    const isSubmitDisabled = useMemo(() => {
+        if (!model) return true;
+        if (status === "streaming" || status === "submitted") return false; // allow Stop
+        return !text.trim();
+    }, [text, status, model]);
+
+    const activeStatusText = useMemo(() => {
+        if (status === "submitted") return "Agent initializing...";
+        if (status === "streaming") return "Agent executing state machine...";
+        return "";
+    }, [status]);
 
     return (
         <div className="relative flex h-[calc(100vh-80px)] flex-col divide-y overflow-hidden">
@@ -232,6 +240,7 @@ export default function ChatInterface() {
                         const reasoningPart = message.parts?.find((p) => p.type === "reasoning");
                         const textParts = message.parts?.filter((p) => p.type === "text") || [];
                         const fileParts = message.parts?.filter((p) => p.type === "file") || [];
+                        const otherParts = message.parts?.filter((p) => p.type !== "text" && p.type !== "reasoning" && p.type !== "file") || [];
                         const isReasoningStreaming =
                             (reasoningPart as any)?.state === "streaming";
 
@@ -242,7 +251,7 @@ export default function ChatInterface() {
                                         from={message.role === "user" ? "user" : "assistant"}
                                         key={message.id}
                                     >
-                                        <div>
+                                        <div className="w-full">
                                             {fileParts.length > 0 && (
                                                 <Attachments variant="grid" className="justify-end">
                                                     {fileParts.map((part: any, idx) => (
@@ -262,6 +271,13 @@ export default function ChatInterface() {
                                                         {(reasoningPart as any).text}
                                                     </ReasoningContent>
                                                 </Reasoning>
+                                            )}
+                                            {otherParts.length > 0 && (
+                                                <div className="my-2 space-y-2">
+                                                    {otherParts.map((part: any, idx: number) => (
+                                                        <AgentMessagePart key={idx} part={part} />
+                                                    ))}
+                                                </div>
                                             )}
                                             <MessageContent>
                                                 {textParts.map((p: any, i) => (
@@ -360,7 +376,8 @@ export default function ChatInterface() {
                                     </ModelSelectorContent>
                                 </ModelSelector>
                             </PromptInputTools>
-                            <PromptInputSubmit disabled={isSubmitDisabled} status={status} />
+                            <div aria-live="polite" className="sr-only">{activeStatusText}</div>
+                            <PromptInputSubmit disabled={isSubmitDisabled} onStop={stop} status={status} />
                         </PromptInputFooter>
                     </PromptInput>
                 </div>

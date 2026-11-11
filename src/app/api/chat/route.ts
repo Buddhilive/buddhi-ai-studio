@@ -1,56 +1,205 @@
-import { streamText, UIMessage, convertToModelMessages, createUIMessageStreamResponse, toUIMessageStream, wrapLanguageModel, extractReasoningMiddleware } from "ai";
-import { createOpenAI } from '@ai-sdk/openai';
+import {
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  convertToModelMessages,
+  type UIMessage,
+} from "ai";
+import { nanoid } from "nanoid";
 
-// Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
+export const maxDuration = 120;
 
 export async function POST(req: Request) {
-    const {
-        messages,
-        model,
-        enableThinking,
-    }: {
-        messages: UIMessage[];
-        model: string;
-        enableThinking?: boolean;
-    } = await req.json();
+  const {
+    messages,
+    model,
+    enableThinking = true,
+  }: {
+    messages: UIMessage[];
+    model: string;
+    enableThinking?: boolean;
+  } = await req.json();
 
-    const selectedModel = model || "gemma-4-e4b";
+  const selectedModel = model || "gemma-4-e4b";
+  const backendUrl = process.env.BACKEND_API_URL ?? "http://localhost:8000";
 
-    const backendUrl = process.env.BACKEND_API_URL ?? "http://localhost:8000";
-    const buddhiAIModel = wrapLanguageModel({
-        model: createOpenAI({
-            baseURL: `${backendUrl}/v1/`,
-            apiKey: "",
-            // The backend accepts a custom `enable_thinking` field; the OpenAI
-            // client has no first-class option for it, so inject it here.
-            fetch: async (input, init) => {
-                if (init?.body && typeof init.body === "string") {
-                    const body = JSON.parse(init.body);
-                    body.enable_thinking = Boolean(enableThinking);
-                    init = { ...init, body: JSON.stringify(body) };
+  const modelMessages = await convertToModelMessages(messages);
+
+  const stream = createUIMessageStream({
+    execute: async ({ writer }) => {
+      const textId = nanoid();
+      const reasoningId = nanoid();
+      let hasStartedText = false;
+      let hasStartedReasoning = false;
+
+      try {
+        const response = await fetch(`${backendUrl}/v1/agent/runs`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messages: modelMessages,
+            model: selectedModel,
+            enable_thinking: Boolean(enableThinking),
+          }),
+        });
+
+        if (!response.ok || !response.body) {
+          const errText = await response.text();
+          writer.write({
+            type: "text-start",
+            id: textId,
+          });
+          writer.write({
+            type: "text-delta",
+            id: textId,
+            delta: `Agent Error (${response.status}): ${errText}`,
+          });
+          writer.write({
+            type: "text-end",
+            id: textId,
+          });
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith("data:")) continue;
+
+            const jsonStr = trimmed.slice(5).trim();
+            if (jsonStr === "[DONE]") {
+              break;
+            }
+
+            try {
+              const event = JSON.parse(jsonStr);
+
+              switch (event.event) {
+                case "reasoning.delta": {
+                  if (!hasStartedReasoning) {
+                    writer.write({
+                      type: "reasoning-start",
+                      id: reasoningId,
+                    });
+                    hasStartedReasoning = true;
+                  }
+                  writer.write({
+                    type: "reasoning-delta",
+                    id: reasoningId,
+                    delta: event.data.delta,
+                  });
+                  break;
                 }
-                return fetch(input, init);
-            },
-        }).chat(selectedModel),
-        // The backend has no reasoning field the OpenAI Chat Completions
-        // client understands, so it wraps reasoning in <think> tags inline
-        // in the text stream; this splits it back into a reasoning part.
-        middleware: extractReasoningMiddleware({ tagName: "think" }),
-    });
 
-    const result = streamText({
-        model: buddhiAIModel,
-        messages: await convertToModelMessages(messages),
-        system:
-            "You are a helpful assistant that can answer questions and help with tasks",
-    });
+                case "text.delta": {
+                  if (!hasStartedText) {
+                    writer.write({
+                      type: "text-start",
+                      id: textId,
+                    });
+                    hasStartedText = true;
+                  }
+                  writer.write({
+                    type: "text-delta",
+                    id: textId,
+                    delta: event.data.delta,
+                  });
+                  break;
+                }
 
-    // send reasoning back to the client
-    return createUIMessageStreamResponse({
-        stream: toUIMessageStream({
-            stream: result.stream,
-            sendReasoning: true,
-        }),
-    });
+                case "tool.call": {
+                  writer.write({
+                    type: "tool-call",
+                    toolCallId: event.data.tool_call_id,
+                    toolName: event.data.tool_name,
+                    input: typeof event.data.arguments === "string"
+                      ? JSON.parse(event.data.arguments || "{}")
+                      : event.data.arguments,
+                  } as unknown as Parameters<typeof writer.write>[0]);
+                  break;
+                }
+
+                case "tool.result": {
+                  writer.write({
+                    type: "tool-result",
+                    toolCallId: event.data.tool_call_id,
+                    toolName: event.data.tool_name,
+                    output: event.data.output,
+                  } as unknown as Parameters<typeof writer.write>[0]);
+                  break;
+                }
+
+                case "plan.update": {
+                  writer.write({
+                    type: "data-plan",
+                    data: event.data.plan,
+                  } as unknown as Parameters<typeof writer.write>[0]);
+                  break;
+                }
+
+                case "node.start":
+                case "node.end": {
+                  writer.write({
+                    type: "data-node",
+                    data: { node: event.node, event: event.event },
+                  } as unknown as Parameters<typeof writer.write>[0]);
+                  break;
+                }
+
+                case "error": {
+                  if (!hasStartedText) {
+                    writer.write({ type: "text-start", id: textId });
+                    hasStartedText = true;
+                  }
+                  writer.write({
+                    type: "text-delta",
+                    id: textId,
+                    delta: `\n\n**Error**: ${event.data?.message || "Execution error"}\n`,
+                  });
+                  break;
+                }
+
+                default:
+                  break;
+              }
+            } catch {
+              // Ignore malformed JSON chunks
+            }
+          }
+        }
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        if (!hasStartedText) {
+          writer.write({ type: "text-start", id: textId });
+          hasStartedText = true;
+        }
+        writer.write({
+          type: "text-delta",
+          id: textId,
+          delta: `\n\nConnection error: ${errorMsg}`,
+        });
+      } finally {
+        if (hasStartedReasoning) {
+          writer.write({ type: "reasoning-end", id: reasoningId });
+        }
+        if (hasStartedText) {
+          writer.write({ type: "text-end", id: textId });
+        }
+      }
+    },
+  });
+
+  return createUIMessageStreamResponse({ stream });
 }

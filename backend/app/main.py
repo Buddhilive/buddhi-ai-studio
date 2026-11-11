@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.mcp_server import mcp_server
-from app.routers import analytics, chat, crawl, embedding_model, embeddings, health, models, models_v1, sandbox, search, settings as settings_router, site_crawler, storage
+from app.routers import agent, analytics, chat, crawl, embedding_model, embeddings, health, models, models_v1, sandbox, search, settings as settings_router, site_crawler, storage
 from app.routers import metrics as metrics_router
 from app.services.crawl_service import crawl_service
 from app.services.embedding_service import embedding_engine_manager
@@ -57,6 +57,7 @@ app.include_router(analytics.router)
 app.include_router(models.router)
 app.include_router(settings_router.router)
 app.include_router(chat.router)
+app.include_router(agent.router)
 app.include_router(embeddings.router)
 app.include_router(models_v1.router)
 app.include_router(embedding_model.router)

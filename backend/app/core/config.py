@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     metrics_flush_interval_s: float = 2.0
     enable_prometheus_metrics: bool = False
 
+    # Agent State Machine
+    agent_max_steps: int = 15
+    agent_max_active_runs: int = 2
+    agent_tool_output_cap: int = 4000
+    agent_default_model: str = "gemma-4-e4b"
+
     # SearXNG & MCP
     searxng_base_url: str = "http://localhost:8080"
     searxng_timeout_s: float = 10.0
