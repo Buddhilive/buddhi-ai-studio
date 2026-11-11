@@ -1,12 +1,56 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python hooks/graph_context.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python hooks/autoharness_hook.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "python .agents/hooks/guard_destructive.py",
+            "command": "python hooks/guard_destructive.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python hooks/rtk_hook.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python hooks/graph_context.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python hooks/autoharness_hook.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python hooks/autoharness_hook.py",
             "timeout": 10
           }
         ]
