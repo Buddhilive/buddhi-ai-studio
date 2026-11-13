@@ -26,6 +26,7 @@ class SandboxSessionCreateRequest(BaseModel):
     allow_network: bool = Field(False, description="Whether to allow outbound internet access")
     memory_limit_mb: int = Field(512, ge=128, le=4096, description="Memory limit in megabytes")
     cpu_limit: float = Field(1.0, ge=0.1, le=4.0, description="CPU cores quota")
+    purpose: str = Field("general", description="Purpose tag, e.g. 'rlm' or 'general'")
 
 
 class SandboxSessionResponse(BaseModel):
@@ -36,6 +37,7 @@ class SandboxSessionResponse(BaseModel):
     last_activity_at: datetime
     expires_at: datetime
     allow_network: bool
+    purpose: str = "general"
 
 
 class SandboxFilePayload(BaseModel):

@@ -13,7 +13,11 @@ from app.schemas.settings import SupportedBackend, SystemResourceRecommendation
 logger = logging.getLogger(__name__)
 
 # Constants for token capacity estimation
-MODEL_WEIGHTS_BYTES = 3_700_000_000  # ~3.7 GB for Gemma 4 E4B int4
+MODEL_WEIGHTS_MAP = {
+    "gemma-4-e4b": 3_660_000_000,
+    "gemma-4-e2b": 2_590_000_000,
+}
+DEFAULT_MODEL_ID = "gemma-4-e4b"
 OS_RESERVE_BYTES = 1_800_000_000      # ~1.8 GB system reserve
 BYTES_PER_TOKEN = 150_000             # ~150 KB KV cache per token (FP16 GQA)
 
@@ -64,8 +68,12 @@ def _check_gpu_supported() -> tuple[bool, str | None]:
         return False, str(exc)
 
 
-def get_system_resource_recommendation() -> SystemResourceRecommendation:
+def get_system_resource_recommendation(model_id: str | None = None) -> SystemResourceRecommendation:
     """Analyzes host memory, CPU, and accelerators to compute recommended tokens and backend."""
+    target_model_id = (model_id or DEFAULT_MODEL_ID).lower()
+    model_name = "Gemma 4 E2B" if "e2b" in target_model_id else "Gemma 4 E4B"
+    model_weights_bytes = MODEL_WEIGHTS_MAP.get(target_model_id, 3_660_000_000 if "e4b" in target_model_id else 2_590_000_000)
+
     mem = psutil.virtual_memory()
     total_ram = mem.total
     avail_ram = mem.available
@@ -129,7 +137,7 @@ def get_system_resource_recommendation() -> SystemResourceRecommendation:
     )
 
     # Token capacity estimation based on available host RAM
-    usable_kv_ram = max(0, avail_ram - (MODEL_WEIGHTS_BYTES + OS_RESERVE_BYTES))
+    usable_kv_ram = max(0, avail_ram - (model_weights_bytes + OS_RESERVE_BYTES))
     raw_tokens = usable_kv_ram // BYTES_PER_TOKEN
 
     if raw_tokens >= 32768 and total_ram >= 24 * 1024**3:
@@ -150,11 +158,12 @@ def get_system_resource_recommendation() -> SystemResourceRecommendation:
 
     avail_gb = avail_ram / (1024**3)
     total_gb = total_ram / (1024**3)
+    weights_gb = model_weights_bytes / (1024**3)
 
     gpu_snippet = f" and {gpu_name} ({gpu_total / (1024**3):.1f} GB VRAM)" if gpu_name and gpu_total else ""
     reasoning = (
         f"Detected {total_gb:.1f} GB total RAM ({avail_gb:.1f} GB available){gpu_snippet}. "
-        f"With ~3.7 GB for model weights and 1.8 GB system reserve, "
+        f"With ~{weights_gb:.1f} GB for {model_name} weights and 1.8 GB system reserve, "
         f"your system safely supports {recommended_max_num_tokens:,} tokens "
         f"(up to {max_viable_tokens:,}). "
         f"Recommended backend: {recommended_backend.upper()}."
@@ -171,6 +180,6 @@ def get_system_resource_recommendation() -> SystemResourceRecommendation:
         recommended_backend=recommended_backend,  # type: ignore[arg-type]
         recommended_max_num_tokens=recommended_max_num_tokens,
         max_viable_tokens=max_viable_tokens,
-        model_assumed="Gemma 4 E4B",
+        model_assumed=model_name,
         reasoning=reasoning,
     )

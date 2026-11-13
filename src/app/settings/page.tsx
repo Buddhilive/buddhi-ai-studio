@@ -24,6 +24,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { CpuIcon, KeyIcon, Loader2Icon, SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
+import { EngineReloadDialog } from "@/components/settings/engine-reload-dialog";
+import { RlmConfig, RlmSettings } from "@/components/settings/rlm-settings";
 
 interface SupportedBackend {
   id: string;
@@ -59,7 +61,12 @@ export default function SettingsPage() {
   // Inference Settings state
   const [litertBackend, setLitertBackend] = useState<string>("cpu");
   const [maxNumToken, setMaxNumToken] = useState<number>(16384);
+  const [initialMaxNumToken, setInitialMaxNumToken] = useState<number>(16384);
   const [isSavingInference, setIsSavingInference] = useState(false);
+  const [isReloadDialogOpen, setIsReloadDialogOpen] = useState(false);
+
+  // RLM Settings state
+  const [rlmConfig, setRlmConfig] = useState<RlmConfig | null>(null);
 
   // System Resource Recommendation state
   const [systemResources, setSystemResources] = useState<SystemResources | null>(null);
@@ -67,10 +74,11 @@ export default function SettingsPage() {
 
   const refreshAll = useCallback(async () => {
     try {
-      const [hfRes, infRes, resRes] = await Promise.all([
+      const [hfRes, infRes, resRes, rlmRes] = await Promise.all([
         fetch("/api/settings/hf-token"),
         fetch("/api/settings/inference"),
         fetch("/api/settings/system-resources"),
+        fetch("/api/settings/rlm"),
       ]);
 
       if (hfRes.ok) {
@@ -81,12 +89,20 @@ export default function SettingsPage() {
       if (infRes.ok) {
         const infData = await infRes.json();
         if (infData.litert_backend) setLitertBackend(infData.litert_backend);
-        if (infData.max_num_token) setMaxNumToken(infData.max_num_token);
+        if (infData.max_num_token) {
+          setMaxNumToken(infData.max_num_token);
+          setInitialMaxNumToken(infData.max_num_token);
+        }
       }
 
       if (resRes.ok) {
         const resData = await resRes.json();
         setSystemResources(resData);
+      }
+
+      if (rlmRes.ok) {
+        const rlmData = await rlmRes.json();
+        setRlmConfig(rlmData);
       }
     } catch (err) {
       console.error("[settings] failed to load settings:", err);
@@ -149,6 +165,58 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const executeSaveInference = useCallback(async () => {
+    setIsSavingInference(true);
+    try {
+      const promises: Promise<Response>[] = [
+        fetch("/api/settings/inference", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            litert_backend: litertBackend,
+            max_num_token: Number(maxNumToken),
+          }),
+        }),
+      ];
+
+      if (rlmConfig) {
+        promises.push(
+          fetch("/api/settings/rlm", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(rlmConfig),
+          })
+        );
+      }
+
+      const [infRes, rlmRes] = await Promise.all(promises);
+      const data = await infRes.json().catch(() => null);
+      if (!infRes.ok) {
+        throw new Error(data?.detail ?? data?.error ?? "Failed to save inference settings");
+      }
+
+      setLitertBackend(data.litert_backend);
+      setMaxNumToken(data.max_num_token);
+      setInitialMaxNumToken(data.max_num_token);
+
+      if (rlmRes && rlmRes.ok) {
+        const rlmData = await rlmRes.json();
+        setRlmConfig(rlmData);
+      }
+
+      setIsReloadDialogOpen(false);
+      toast.success("Settings saved successfully", {
+        description: `Backend: ${data.litert_backend.toUpperCase()} • ${Number(data.max_num_token).toLocaleString()} tokens.`,
+      });
+    } catch (err) {
+      toast.error("Could not save settings", {
+        description: err instanceof Error ? err.message : "The backend may be unreachable.",
+      });
+    } finally {
+      setIsSavingInference(false);
+    }
+  }, [litertBackend, maxNumToken, rlmConfig]);
+
   const handleSaveInference = useCallback(async () => {
     if (isNaN(maxNumToken) || maxNumToken < 512 || maxNumToken > 131072) {
       toast.error("Invalid token count", {
@@ -157,33 +225,13 @@ export default function SettingsPage() {
       return;
     }
 
-    setIsSavingInference(true);
-    try {
-      const res = await fetch("/api/settings/inference", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          litert_backend: litertBackend,
-          max_num_token: Number(maxNumToken),
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(data?.detail ?? data?.error ?? "Failed to save inference settings");
-      }
-      setLitertBackend(data.litert_backend);
-      setMaxNumToken(data.max_num_token);
-      toast.success("Inference settings saved", {
-        description: `Backend set to ${data.litert_backend.toUpperCase()} with ${Number(data.max_num_token).toLocaleString()} tokens.`,
-      });
-    } catch (err) {
-      toast.error("Could not save inference settings", {
-        description: err instanceof Error ? err.message : "The backend may be unreachable.",
-      });
-    } finally {
-      setIsSavingInference(false);
+    // If context window was changed, confirm via modal since it reloads LiteRT engine
+    if (Number(maxNumToken) !== initialMaxNumToken) {
+      setIsReloadDialogOpen(true);
+    } else {
+      await executeSaveInference();
     }
-  }, [litertBackend, maxNumToken]);
+  }, [maxNumToken, initialMaxNumToken, executeSaveInference]);
 
   const handleApplyRecommendation = useCallback(() => {
     if (!systemResources) return;
@@ -358,6 +406,17 @@ export default function SettingsPage() {
         </Card>
       )}
 
+      {/* RLM Settings Card */}
+      {!isLoading && rlmConfig && (
+        <RlmSettings
+          config={rlmConfig}
+          onChange={setRlmConfig}
+          contextWindow={maxNumToken}
+          maxViableTokens={systemResources?.max_viable_tokens}
+          modelAssumed={systemResources?.model_assumed}
+        />
+      )}
+
       {/* Hugging Face Token Card */}
       {isLoading ? (
         <Card>
@@ -414,6 +473,16 @@ export default function SettingsPage() {
           )}
         </Card>
       )}
+
+      {/* Confirmation Dialog for Engine Reload when Context Window changes */}
+      <EngineReloadDialog
+        open={isReloadDialogOpen}
+        onOpenChange={setIsReloadDialogOpen}
+        onConfirm={executeSaveInference}
+        isSaving={isSavingInference}
+        previousTokens={initialMaxNumToken}
+        newTokens={Number(maxNumToken)}
+      />
     </div>
   );
 }

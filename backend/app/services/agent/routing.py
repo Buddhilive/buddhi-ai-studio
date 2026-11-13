@@ -18,9 +18,11 @@ def is_repeated_action(recent_actions: list[str] | None, threshold: int = 3) -> 
     return recent_actions[-threshold:] == [last_action] * threshold
 
 
-def route_after_analyze(state: AgentState) -> Literal["plan", "end"]:
+def route_after_analyze(state: AgentState) -> Literal["plan", "rlm_run", "end"]:
     if state.get("status") in ("failed", "cancelled"):
         return "end"
+    if state.get("is_rlm_mode"):
+        return "rlm_run"
     return "plan"
 
 

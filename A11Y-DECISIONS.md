@@ -20,3 +20,10 @@
 
 ### 4. Agent Progress Announcements (`src/components/chat/chat-interface.tsx`)
 - **Live Region**: Added polite live region `<div aria-live="polite" className="sr-only">` announcing phase changes ("Agent initializing...", "Agent executing state machine...") without interrupting speech during streaming token output.
+
+### 5. RLM Context Scaling Settings (`src/components/settings/rlm-settings.tsx`)
+- **Slider Keyboard Operability**: Used semantic native `<input type="range">` with explicit `aria-valuemin="0"`, `aria-valuemax="3"`, `aria-valuenow`, and `aria-valuetext` describing the recursion depth level and reach. Visible high-contrast focus rings (`focus:ring-2 focus:ring-primary`) ensure keyboard navigation parity.
+- **Dynamic Live Region**: Effective reach estimate container is configured with `aria-live="polite"` so screen readers are gently notified when context window or recursion depth sliders adjust the computed token capacity without interrupting active speech.
+- **Form Controls & Labels**: All numeric inputs and mode selectors are bound via `useId()` and associated `<Label htmlFor={...}>`.
+- **Non-Reliance on Color**: Hardware viability warnings and depth recommendations include explicit text, badge labels, and icons.
+- **Confirmation Dialog**: Engine reload modal uses Radix `Dialog` with focus trapping, `Escape` key cancellation, and clear warning descriptions of memory reallocation.

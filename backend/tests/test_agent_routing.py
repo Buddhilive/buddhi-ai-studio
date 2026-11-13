@@ -30,6 +30,9 @@ def test_route_after_analyze():
     state = {"status": "failed"}
     assert route_after_analyze(state) == "end"
 
+    state = {"status": "running", "is_rlm_mode": True}
+    assert route_after_analyze(state) == "rlm_run"
+
 
 def test_route_after_act():
     # No tool calls -> goes to review

@@ -84,6 +84,40 @@ AGENT_TOOL_DEFINITIONS = [
             },
         ),
     ),
+    ToolDefinition(
+        type="function",
+        function=FunctionDefinition(
+            name="run_python_repl",
+            description="Execute Python code in the isolated OpenSandbox REPL with rlm_helpers preloaded.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "The Python code to execute in the sandbox REPL.",
+                    }
+                },
+                "required": ["code"],
+            },
+        ),
+    ),
+    ToolDefinition(
+        type="function",
+        function=FunctionDefinition(
+            name="finish_rlm_task",
+            description="Conclude the RLM exploration and report the final findings or code solution.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "final_answer": {
+                        "type": "string",
+                        "description": "The final synthesized conclusion, analysis, or resolution.",
+                    }
+                },
+                "required": ["final_answer"],
+            },
+        ),
+    ),
 ]
 
 
@@ -174,6 +208,27 @@ async def execute_tool(
             truncated_output, is_truncated = _truncate_output(output)
             status = "completed" if result.status == "completed" else "error"
             return status, truncated_output, result.exit_code, is_truncated
+
+        elif name == "run_python_repl":
+            code = args.get("code", "")
+            if not code:
+                return "error", "Error: 'code' argument is required", 1, False
+            req = SandboxExecutionRequest(
+                code=code,
+                language="python",
+                timeout_s=settings.sandbox_default_timeout_s,
+            )
+            result = await sandbox_service.execute_in_session(session_id, req)
+            output = result.stdout
+            if result.stderr:
+                output = f"{output}\n{result.stderr}" if output else result.stderr
+            truncated_output, is_truncated = _truncate_output(output)
+            status = "completed" if result.status == "completed" and result.exit_code == 0 else "error"
+            return status, truncated_output, result.exit_code, is_truncated
+
+        elif name == "finish_rlm_task":
+            answer = args.get("final_answer", "")
+            return "completed", f"FINAL_ANSWER: {answer}", 0, False
 
         else:
             return "error", f"Unknown tool: '{name}'", 1, False

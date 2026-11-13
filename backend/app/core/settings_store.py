@@ -9,6 +9,7 @@ SQLITE_DB_PATH = BACKEND_ROOT / "data" / "app.db"
 _HF_TOKEN_KEY = "hf_token"
 _LITERT_BACKEND_KEY = "litert_backend"
 _CHAT_MAX_NUM_TOKENS_KEY = "chat_max_num_tokens"
+_RLM_SETTINGS_KEY = "rlm_settings"
 
 
 def _connect() -> sqlite3.Connection:
@@ -72,4 +73,37 @@ def set_inference_settings(litert_backend: str, max_num_token: int) -> None:
             "INSERT INTO app_settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (_CHAT_MAX_NUM_TOKENS_KEY, str(max_num_token)),
+        )
+
+
+def get_rlm_settings() -> dict:
+    import json
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?", (_RLM_SETTINGS_KEY,)
+        ).fetchone()
+    if row and row[0]:
+        try:
+            return json.loads(row[0])
+        except Exception:
+            pass
+    return {
+        "enabled": True,
+        "mode": "auto",
+        "max_depth": settings.rlm_max_depth,
+        "snippet_tokens": settings.rlm_default_snippet_tokens,
+        "max_subcalls": settings.rlm_max_subcalls,
+        "subcall_concurrency": settings.rlm_subcall_concurrency,
+        "auto_threshold_ratio": settings.rlm_auto_threshold_ratio,
+        "prompt_reserve_tokens": 2048,
+    }
+
+
+def set_rlm_settings(data: dict) -> None:
+    import json
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (_RLM_SETTINGS_KEY, json.dumps(data)),
         )

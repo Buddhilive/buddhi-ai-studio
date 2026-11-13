@@ -60,6 +60,15 @@ class Settings(BaseSettings):
     sandbox_default_allow_network: bool = False
     sandbox_default_image: str = "python:3.11-slim"
     sandbox_session_inactivity_ttl_s: int = 1800
+    sandbox_rlm_memory_mb: int = 256
+    sandbox_rlm_idle_ttl_s: int = 300
+
+    # RLM (Recursive Language Model)
+    rlm_max_depth: int = 2
+    rlm_default_snippet_tokens: int = 2048
+    rlm_max_subcalls: int = 32
+    rlm_subcall_concurrency: int = 2
+    rlm_auto_threshold_ratio: float = 0.6
 
     # Crawl4AI
     crawl4ai_base_url: str = "http://localhost:11235"

@@ -4,6 +4,7 @@ import logging
 import re
 from typing import Any
 
+from app.core import settings_store
 from app.core.config import settings
 from app.core.tool_parser import extract_tool_calls
 from app.schemas.agent import PlanStep
@@ -97,9 +98,28 @@ async def analyze_node(state: AgentState, emitter: AgentEventEmitter | None = No
     if emitter:
         await emitter.emit_node_end("analyze", {"analysis": text[:100]})
 
+    # Check RLM activation condition
+    rlm_conf = settings_store.get_rlm_settings()
+    is_rlm_mode = False
+    if rlm_conf.get("enabled", True):
+        mode = rlm_conf.get("mode", "auto")
+        if mode == "always":
+            is_rlm_mode = True
+        elif mode == "auto":
+            all_content = " ".join(
+                str(m.content) for m in state.get("messages", []) if hasattr(m, "content") and m.content
+            )
+            estimated_tokens = max(1, len(all_content) // 4)
+            current_max_tokens = int(settings_store.get_inference_settings().get("max_num_token", 16384))
+            ratio = float(rlm_conf.get("auto_threshold_ratio", 0.6))
+            threshold = int(current_max_tokens * ratio)
+            if estimated_tokens >= threshold or "rlm" in all_content.lower():
+                is_rlm_mode = True
+
     return {
         "step": step,
         "status": "running",
+        "is_rlm_mode": is_rlm_mode,
     }
 
 
@@ -240,4 +260,36 @@ async def review_node(state: AgentState, emitter: AgentEventEmitter | None = Non
         "verdict": verdict,
         "status": status,
         "step": step,
+    }
+
+
+async def rlm_run_node(state: AgentState, emitter: AgentEventEmitter | None = None) -> dict[str, Any]:
+    """Autonomous RLM execution node running in an isolated OpenSandbox session."""
+    if emitter:
+        await emitter.emit_node_start("rlm_run")
+
+    from app.services.rlm.runner import RlmTaskRunner
+    from dataclasses import asdict
+
+    user_messages = [m for m in state.get("messages", []) if getattr(m, "role", "") == "user"]
+    task_prompt = user_messages[-1].content if user_messages else "Analyze repository codebase"
+    if isinstance(task_prompt, list):
+        task_prompt = " ".join(str(p) for p in task_prompt)
+
+    runner = RlmTaskRunner()
+    result = await runner.run(task_prompt=str(task_prompt))
+
+    if emitter:
+        await emitter.emit_text_delta("rlm_run", result.final_answer)
+        await emitter.emit_node_end("rlm_run", {
+            "status": result.status,
+            "steps": result.steps_taken,
+            "telemetry": asdict(result.telemetry),
+        })
+
+    return {
+        "status": "completed" if result.status == "completed" else "failed",
+        "final_output": result.final_answer,
+        "rlm_telemetry": asdict(result.telemetry),
+        "is_rlm_mode": True,
     }

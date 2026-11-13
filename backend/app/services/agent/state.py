@@ -41,3 +41,5 @@ class AgentState(TypedDict, total=False):
     session_id: str | None
     final_output: str | None
     error: str | None
+    is_rlm_mode: bool
+    rlm_telemetry: dict[str, Any] | None

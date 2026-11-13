@@ -33,10 +33,12 @@ class ActiveSession:
     last_activity_at: datetime
     timeout_s: int
     allow_network: bool
+    purpose: str = "general"
 
     @property
     def expires_at(self) -> datetime:
-        return self.last_activity_at + timedelta(seconds=self.timeout_s)
+        effective_ttl = min(self.timeout_s, settings.sandbox_rlm_idle_ttl_s) if self.purpose == "rlm" else self.timeout_s
+        return self.last_activity_at + timedelta(seconds=effective_ttl)
 
     def is_expired(self) -> bool:
         return datetime.now(timezone.utc) > self.expires_at
@@ -183,7 +185,7 @@ class SandboxService:
 
         opts = RunCommandOpts(
             timeout=timedelta(seconds=request.timeout_s),
-            env=request.env_vars,
+            env=request.env_vars, # type: ignore
         )
 
         try:
@@ -205,8 +207,8 @@ class SandboxService:
         stdout_parts: list[str] = []
         stderr_parts: list[str] = []
 
-        if exec_result.logs and exec_result.logs.content:
-            for msg in exec_result.logs.content:
+        if exec_result.logs and exec_result.logs.content: # type: ignore
+            for msg in exec_result.logs.content: # type: ignore
                 if getattr(msg, "is_error", False):
                     stderr_parts.append(msg.text)
                 else:
@@ -242,6 +244,7 @@ class SandboxService:
             last_activity_at=now,
             timeout_s=request.timeout_s,
             allow_network=request.allow_network,
+            purpose=getattr(request, "purpose", "general"),
         )
         async with self._lock:
             self._active_sessions[session_id] = session
@@ -254,6 +257,7 @@ class SandboxService:
             last_activity_at=session.last_activity_at,
             expires_at=session.expires_at,
             allow_network=session.allow_network,
+            purpose=session.purpose,
         )
 
     async def list_sessions(self) -> list[SandboxSessionResponse]:
@@ -267,6 +271,7 @@ class SandboxService:
                     last_activity_at=s.last_activity_at,
                     expires_at=s.expires_at,
                     allow_network=s.allow_network,
+                    purpose=s.purpose,
                 )
                 for s in self._active_sessions.values()
             ]

@@ -32,6 +32,23 @@ class InferenceSettings(BaseModel):
     max_num_token: int = Field(default=16384, ge=512, le=131072)
 
 
+class RlmSettings(BaseModel):
+    enabled: bool = True
+    mode: Literal["auto", "always", "never"] = "auto"
+    max_depth: int = Field(default=2, ge=0, le=4)
+    snippet_tokens: int = Field(default=2048, ge=512, le=8192)
+    max_subcalls: int = Field(default=32, ge=1, le=256)
+    subcall_concurrency: int = Field(default=2, ge=1, le=8)
+    auto_threshold_ratio: float = Field(default=0.6, ge=0.1, le=1.0)
+    prompt_reserve_tokens: int = Field(default=2048, ge=512, le=8192)
+
+
+class RlmSettingsResponse(RlmSettings):
+    effective_reach_tokens: int
+    fan_out: int
+    bounded_by_budget: bool
+
+
 class SystemResourceRecommendation(BaseModel):
     total_memory_bytes: int
     available_memory_bytes: int

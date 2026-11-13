@@ -10,6 +10,7 @@ from app.services.agent.nodes import (
     observe_node,
     plan_node,
     review_node,
+    rlm_run_node,
 )
 from app.services.agent.routing import (
     route_after_act,
@@ -38,6 +39,7 @@ def build_agent_graph(checkpointer: Any | None = None, interrupt_before: list[st
     builder.add_node("act", _wrap_node(act_node))
     builder.add_node("observe", _wrap_node(observe_node))
     builder.add_node("review", _wrap_node(review_node))
+    builder.add_node("rlm_run", _wrap_node(rlm_run_node))
 
     # Entry edge
     builder.add_edge(START, "analyze")
@@ -46,8 +48,10 @@ def build_agent_graph(checkpointer: Any | None = None, interrupt_before: list[st
     builder.add_conditional_edges(
         "analyze",
         route_after_analyze,
-        {"plan": "plan", "end": END},
+        {"plan": "plan", "rlm_run": "rlm_run", "end": END},
     )
+
+    builder.add_edge("rlm_run", END)
 
     builder.add_edge("plan", "act")
 

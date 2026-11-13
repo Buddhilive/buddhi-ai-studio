@@ -1,13 +1,16 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.core import settings_store
 from app.schemas.settings import (
     HfTokenRequest,
     HfTokenStatus,
     InferenceSettings,
+    RlmSettings,
+    RlmSettingsResponse,
     SystemResourceRecommendation,
 )
 from app.services.inference_service import inference_engine_manager
+from app.services.rlm.reach import compute_effective_reach
 from app.services.system_resource_service import get_system_resource_recommendation
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -47,7 +50,42 @@ def update_inference_settings(request: InferenceSettings) -> InferenceSettings:
 
 
 @router.get("/system-resources", response_model=SystemResourceRecommendation)
-def get_system_resources() -> SystemResourceRecommendation:
-    return get_system_resource_recommendation()
+def get_system_resources(model_id: str | None = None) -> SystemResourceRecommendation:
+    return get_system_resource_recommendation(model_id=model_id)
+
+
+@router.get("/rlm", response_model=RlmSettingsResponse)
+def get_rlm_settings() -> RlmSettingsResponse:
+    conf = settings_store.get_rlm_settings()
+    inf_conf = settings_store.get_inference_settings()
+    context_window = int(inf_conf.get("max_num_token", 16384))
+
+    reach = compute_effective_reach(
+        context_window=context_window,
+        snippet_tokens=conf.get("snippet_tokens", 2048),
+        max_depth=conf.get("max_depth", 2),
+        max_subcalls=conf.get("max_subcalls", 32),
+        prompt_reserve_tokens=conf.get("prompt_reserve_tokens", 2048),
+    )
+
+    return RlmSettingsResponse(
+        enabled=conf.get("enabled", True),
+        mode=conf.get("mode", "auto"),
+        max_depth=conf.get("max_depth", 2),
+        snippet_tokens=conf.get("snippet_tokens", 2048),
+        max_subcalls=conf.get("max_subcalls", 32),
+        subcall_concurrency=conf.get("subcall_concurrency", 2),
+        auto_threshold_ratio=conf.get("auto_threshold_ratio", 0.6),
+        prompt_reserve_tokens=conf.get("prompt_reserve_tokens", 2048),
+        effective_reach_tokens=reach.effective_reach_tokens,
+        fan_out=reach.fan_out,
+        bounded_by_budget=reach.bounded_by_budget,
+    )
+
+
+@router.put("/rlm", response_model=RlmSettingsResponse)
+def update_rlm_settings(request: RlmSettings) -> RlmSettingsResponse:
+    settings_store.set_rlm_settings(request.model_dump())
+    return get_rlm_settings()
 
 
