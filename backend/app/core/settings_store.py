@@ -10,6 +10,7 @@ _HF_TOKEN_KEY = "hf_token"
 _LITERT_BACKEND_KEY = "litert_backend"
 _CHAT_MAX_NUM_TOKENS_KEY = "chat_max_num_tokens"
 _RLM_SETTINGS_KEY = "rlm_settings"
+_EGM_SETTINGS_KEY = "egm_settings"
 
 
 def _connect() -> sqlite3.Connection:
@@ -106,4 +107,36 @@ def set_rlm_settings(data: dict) -> None:
             "INSERT INTO app_settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (_RLM_SETTINGS_KEY, json.dumps(data)),
+        )
+
+
+def get_egm_settings() -> dict:
+    import json
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?", (_EGM_SETTINGS_KEY,)
+        ).fetchone()
+    if row and row[0]:
+        try:
+            return json.loads(row[0])
+        except Exception:
+            pass
+    return {
+        "enabled": settings.egm_enabled_default,
+        "max_review_rounds": settings.egm_max_review_rounds,
+        "goldfish_concurrency": settings.egm_goldfish_concurrency,
+        "reviewer_timeout_s": settings.egm_reviewer_timeout_s,
+        "context_budget_tokens": settings.egm_context_budget_tokens,
+        "enable_brainstorm": settings.egm_enable_brainstorm,
+        "default_skill_mode": settings.egm_default_skill_mode,
+    }
+
+
+def set_egm_settings(data: dict) -> None:
+    import json
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (_EGM_SETTINGS_KEY, json.dumps(data)),
         )

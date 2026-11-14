@@ -26,6 +26,15 @@ The core execution harness is orchestrated via **LangGraph**:
 To eliminate self-confirmation bias and context rot:
 - **Elephant Agent (Architect & Builder)**: Stateful, deep-context worker loaded with the repository's AST graph, project specification, and execution history. Decomposes goals and writes code.
 - **Goldfish Agent (Zero-Context Reviewer & Verifier)**: Stateless, clean-slate worker spawned with zero prior chat memory. Inspects the isolated `[Spec Contract + Git Diff + Test Output]` to catch blind spots, unstated assumptions, and regressions with completely fresh eyes.
+- **7-Skill Lifecycle**:
+  1. `brainstorm`: Pre-draft 7-lens shootdown swarm producing `concepts_brief.md`.
+  2. `draft`: Elephant drafts design spec under `.buddhi/specs/<run_id>/spec.md` with explicit `Target Scope & File Boundary`.
+  3. `goldfish_review`: 7 parallel zero-context reviewers (design, readiness, zoom-out, comprehension, structural, style, codebase details) evaluate against offline standards, compiled via `Synthesizer` into `review_report.md`.
+  4. `resolve`: Human-in-the-loop review gate (`POST /v1/agent/runs/{run_id}/resolve`) with accessible triage controls to accept, reject, or defer findings, looping until approved or max rounds reached.
+  5. `act`: Implementation writes restricted strictly by tool-level guardrails to `SpecContract.target_scope_files`.
+  6. `goldfish_verify`: Zero-context sandbox audit evaluating only `[Spec + Git Diff + Test Output]`, failing closed (`retry`) on unapproved modifications or test regressions.
+  7. `drift_report`: Spec-to-codebase divergence tracker generating `drift_report.md`.
+- **DuckDB Checkpointer Persistence**: Dual persistence in `AgentState["egm_artifacts"]` via `duckdb` BLOB storage and OpenSandbox filesystem (`.buddhi/specs/<run_id>/`), surviving restarts and process terminations.
 
 ### 3. Adaptive Scaffolding (Google Harness²)
 The harness dynamically adapts to unfamiliar codebases and languages by managing the **8 Editable Components** around frozen local foundation models:

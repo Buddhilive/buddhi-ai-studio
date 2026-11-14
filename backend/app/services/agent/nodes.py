@@ -40,10 +40,12 @@ def parse_plan_text(text: str) -> list[PlanStep]:
     return steps
 
 
-def parse_review_verdict(text: str) -> str:
+def parse_review_verdict(text: str, strict: bool = False) -> str:
     match = re.search(r"VERDICT:\s*(pass|retry|continue)", text, re.IGNORECASE)
     if match:
         return match.group(1).lower()
+    if strict:
+        return "retry"
     # Default to pass if positive or stop indicators, otherwise pass if final output ready
     if "pass" in text.lower():
         return "pass"
@@ -99,22 +101,25 @@ async def analyze_node(state: AgentState, emitter: AgentEventEmitter | None = No
         await emitter.emit_node_end("analyze", {"analysis": text[:100]})
 
     # Check RLM activation condition
-    rlm_conf = settings_store.get_rlm_settings()
-    is_rlm_mode = False
-    if rlm_conf.get("enabled", True):
-        mode = rlm_conf.get("mode", "auto")
-        if mode == "always":
-            is_rlm_mode = True
-        elif mode == "auto":
-            all_content = " ".join(
-                str(m.content) for m in state.get("messages", []) if hasattr(m, "content") and m.content
-            )
-            estimated_tokens = max(1, len(all_content) // 4)
-            current_max_tokens = int(settings_store.get_inference_settings().get("max_num_token", 16384))
-            ratio = float(rlm_conf.get("auto_threshold_ratio", 0.6))
-            threshold = int(current_max_tokens * ratio)
-            if estimated_tokens >= threshold or "rlm" in all_content.lower():
+    if "is_rlm_mode" in state and state.get("is_rlm_mode") is not None:
+        is_rlm_mode = bool(state["is_rlm_mode"])
+    else:
+        rlm_conf = settings_store.get_rlm_settings()
+        is_rlm_mode = False
+        if rlm_conf.get("enabled", True):
+            mode = rlm_conf.get("mode", "auto")
+            if mode == "always":
                 is_rlm_mode = True
+            elif mode == "auto":
+                all_content = " ".join(
+                    str(m.content) for m in state.get("messages", []) if hasattr(m, "content") and m.content
+                )
+                estimated_tokens = max(1, len(all_content) // 4)
+                current_max_tokens = int(settings_store.get_inference_settings().get("max_num_token", 16384))
+                ratio = float(rlm_conf.get("auto_threshold_ratio", 0.6))
+                threshold = int(current_max_tokens * ratio)
+                if estimated_tokens >= threshold or "rlm" in all_content.lower():
+                    is_rlm_mode = True
 
     return {
         "step": step,
@@ -192,10 +197,24 @@ async def observe_node(state: AgentState, emitter: AgentEventEmitter | None = No
     pending = state.get("pending_tool_calls") or []
     new_obs: list[Observation] = []
 
+    # Build guardrail context from state
+    from app.services.agent.tools import ToolGuardrailContext
+    spec_contract = state.get("spec_contract") or {}
+    guardrail_ctx = ToolGuardrailContext(
+        is_egm_mode=bool(state.get("is_egm_mode")),
+        run_id=str(state.get("run_id") or ""),
+        egm_phase=state.get("egm_phase"),
+        spec_approved=bool(state.get("egm_approved")),
+        target_scope_files=tuple(spec_contract.get("target_scope_files") or ()),
+        allowed_write_paths=tuple(state.get("allowed_write_paths") or ()),
+    )
+
     for tc in pending:
         t_name = tc.function.name or ""
         t_args = tc.function.arguments or "{}"
-        status, output, exit_code, truncated = await execute_tool(t_name, t_args, session_id)
+        status, output, exit_code, truncated = await execute_tool(
+            t_name, t_args, session_id, guardrail_ctx=guardrail_ctx
+        )
 
         if emitter:
             await emitter.emit_tool_result(

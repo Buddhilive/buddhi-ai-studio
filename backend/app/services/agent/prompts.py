@@ -98,6 +98,78 @@ def build_review_messages(
         "VERDICT: pass\n"
         "VERDICT: retry\n"
         "VERDICT: continue\n\n"
+    )
+
+    return [ChatMessage(role="system", content=instructions)] + user_messages
+
+
+def build_draft_messages(
+    user_messages: list[ChatMessage],
+    concepts_brief: str | None = None,
+) -> list[ChatMessage]:
+    brief_section = f"\n### CONCEPTS BRIEF (From Ideation/Brainstorm):\n{concepts_brief}\n" if concepts_brief else ""
+
+    instructions = (
+        f"{SYSTEM_HARNESS_PROMPT}\n"
+        "ROLE: Elephant (Lead Software Architect & Designer)\n"
+        "PHASE: DRAFT SPECIFICATION\n\n"
+        "You are creating a comprehensive, spec-driven development design document.\n"
+        f"{brief_section}\n"
+        "MANDATORY STRUCTURAL SECTIONS TO INCLUDE:\n"
+        "1. ## Overview & Problem Statement\n"
+        "2. ## FeatureRange (High-Level Architecture & User Journeys)\n"
+        "3. ## DetailedRange (Technical Implementation, Data Models & Function Signatures)\n"
+        "4. ## Target Scope & File Boundary\n"
+        "   List the exact relative file paths permitted for modification during implementation, one per line with bullet '-' e.g.:\n"
+        "   - backend/app/services/example.py\n"
+        "   - src/components/example.tsx\n"
+        "5. ## Verification & Testing Strategy\n\n"
+        "Provide a clear, detailed, and unhurried design specification."
+    )
+
+    return [ChatMessage(role="system", content=instructions)] + user_messages
+
+
+def build_resolve_messages(
+    user_messages: list[ChatMessage],
+    current_spec: str,
+    review_report_md: str,
+    decisions: list[dict[str, Any]],
+) -> list[ChatMessage]:
+    decisions_summary = "\n".join([
+        f"- Finding {d.get('finding_id')}: {d.get('decision')} (Rationale: {d.get('rationale') or 'None'})"
+        for d in decisions
+    ]) or "No explicit user decisions provided."
+
+    instructions = (
+        f"{SYSTEM_HARNESS_PROMPT}\n"
+        "ROLE: Elephant (Lead Software Architect & Resolver)\n"
+        "PHASE: RESOLVE & SHARPEN SPECIFICATION\n\n"
+        "The Goldfish review has reported findings, and the user has provided triage decisions.\n"
+        f"User Triage Decisions:\n{decisions_summary}\n\n"
+        f"Review Report Summary:\n{review_report_md[:2000]}\n\n"
+        "YOUR TASK: Apply all 'accept' decisions directly to update and refine the specification.\n"
+        "Output the COMPLETE revised specification document including updated FeatureRange, DetailedRange, and Target Scope & File Boundary."
+    )
+
+    return [
+        ChatMessage(role="system", content=instructions),
+        ChatMessage(role="user", content=f"### CURRENT SPECIFICATION:\n\n{current_spec}"),
+    ]
+    obs_summary = "\n".join(
+        f"- {o.get('name')}: {o.get('status')} (exit {o.get('exit_code', 0)})"
+        for o in observations[-6:]
+    ) or "None"
+
+    instructions = (
+        f"{SYSTEM_HARNESS_PROMPT}\n"
+        "PHASE: REVIEW\n"
+        f"Recent tool outcomes:\n{obs_summary}\n\n"
+        "Determine if the user objective has been fully satisfied and verified.\n"
+        "You MUST conclude your review with exactly one of the following lines on its own line:\n"
+        "VERDICT: pass\n"
+        "VERDICT: retry\n"
+        "VERDICT: continue\n\n"
         "- 'pass': Objective is fully met and verified.\n"
         "- 'continue': More tool steps are needed according to the plan.\n"
         "- 'retry': Execution hit unexpected failure or tests failed; replanning needed."

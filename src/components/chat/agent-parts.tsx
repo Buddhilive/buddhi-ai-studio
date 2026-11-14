@@ -4,7 +4,9 @@ import * as React from "react";
 import { TerminalOutput } from "@/components/ai-elements/terminal";
 import { ToolCard } from "@/components/ai-elements/tool";
 import { Plan } from "@/components/ai-elements/plan";
-import type { PlanStep } from "@/lib/agent-events";
+import { EgmPhaseBadge } from "@/components/ai-elements/egm-phase-badge";
+import { EgmReviewPanel } from "@/components/ai-elements/egm-review-panel";
+import type { PlanStep, EgmReviewReport } from "@/lib/agent-events";
 
 interface AgentPartProps {
   part: Record<string, unknown>;
@@ -14,6 +16,45 @@ export function AgentMessagePart({ part }: AgentPartProps) {
   // Handle Plan data parts
   if (part.type === "data-plan" && Array.isArray(part.data)) {
     return <Plan steps={part.data as PlanStep[]} />;
+  }
+
+  // Handle EGM status / telemetry data parts
+  if (part.type === "data-egm-status" && part.data && typeof part.data === "object") {
+    const data = part.data as Record<string, unknown>;
+    const phase = (data.phase as string) || (data.stage as string) || "draft";
+    const round = typeof data.round === "number" ? data.round : 1;
+    const maxRounds = typeof data.max_rounds === "number" ? data.max_rounds : 3;
+    const reviewerStatuses = (data.reviewer_statuses as Record<string, string>) ||
+      (data.persona && data.status ? { [String(data.persona)]: String(data.status) } : {});
+    const specPath = typeof data.spec_path === "string" ? data.spec_path : undefined;
+
+    return (
+      <EgmPhaseBadge
+        phase={phase}
+        round={round}
+        maxRounds={maxRounds}
+        reviewerStatuses={reviewerStatuses}
+        specPath={specPath}
+      />
+    );
+  }
+
+  // Handle EGM review gate / findings triage parts
+  if (part.type === "data-egm-review" && part.data && typeof part.data === "object") {
+    const data = part.data as Record<string, unknown>;
+    const report = (data.review_report as EgmReviewReport) || null;
+    const runId = (data.run_id as string) || "";
+    const specContract = data.spec_contract as { path?: string } | undefined;
+
+    if (report) {
+      return (
+        <EgmReviewPanel
+          runId={runId}
+          report={report}
+          specPath={specContract?.path}
+        />
+      );
+    }
   }
 
   // Handle Tool call / result parts

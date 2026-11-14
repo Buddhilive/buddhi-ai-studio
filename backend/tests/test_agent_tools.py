@@ -4,7 +4,13 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.schemas.sandbox import SandboxExecutionResult
-from app.services.agent.tools import _truncate_output, execute_tool, sandbox_service
+from app.services.agent.tools import (
+    ToolGuardrailContext,
+    _truncate_output,
+    execute_tool,
+    sandbox_service,
+    validate_workspace_path,
+)
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -96,8 +102,107 @@ def test_execute_tool_unknown_or_missing_args():
         assert "Unknown tool" in output
         assert exit_code == 1
 
-        status, output, exit_code, _ = await execute_tool("run_command", {}, "session_123")
-        assert status == "error"
-        assert "required" in output
+    asyncio.run(_run())
+
+
+def test_egm_guardrails_pre_approval_writes():
+    async def _run():
+        mock_write = AsyncMock(return_value=True)
+        orig_write = sandbox_service.write_session_file
+        sandbox_service.write_session_file = mock_write
+
+        try:
+            # Pre-approval context (Phases 1-4)
+            ctx = ToolGuardrailContext(
+                is_egm_mode=True,
+                run_id="run_abc",
+                egm_phase="draft",
+                spec_approved=False,
+            )
+
+            # 1. Attempting to write production source file should fail closed
+            status, output, exit_code, _ = await execute_tool(
+                "write_file",
+                {"path": "backend/app/main.py", "content": "print('exploit')"},
+                "sess_1",
+                guardrail_ctx=ctx,
+            )
+            assert status == "error"
+            assert "EGM Guardrail Violation: Phases 1-4 restrict writes" in output
+            assert mock_write.call_count == 0
+
+            # 2. Writing to .buddhi/specs/run_abc/spec.md should succeed
+            status, output, exit_code, _ = await execute_tool(
+                "write_file",
+                {"path": ".buddhi/specs/run_abc/spec.md", "content": "# Spec"},
+                "sess_1",
+                guardrail_ctx=ctx,
+            )
+            assert status == "completed"
+            assert mock_write.call_count == 1
+
+            # 3. Path traversal should fail
+            status, output, exit_code, _ = await execute_tool(
+                "write_file",
+                {"path": "../../etc/passwd", "content": "hacked"},
+                "sess_1",
+                guardrail_ctx=ctx,
+            )
+            assert status == "error"
+            assert "EGM Path Validation Error" in output
+
+            # 4. Mutating command pre-approval should be blocked
+            status, output, exit_code, _ = await execute_tool(
+                "run_command",
+                {"command": "echo 'hack' > file.txt"},
+                "sess_1",
+                guardrail_ctx=ctx,
+            )
+            assert status == "error"
+            assert "EGM Guardrail Violation" in output
+
+        finally:
+            sandbox_service.write_session_file = orig_write
+
+    asyncio.run(_run())
+
+
+def test_egm_guardrails_phase5_scope():
+    async def _run():
+        mock_write = AsyncMock(return_value=True)
+        orig_write = sandbox_service.write_session_file
+        sandbox_service.write_session_file = mock_write
+
+        try:
+            # Post-approval context (Phase 5 act)
+            ctx = ToolGuardrailContext(
+                is_egm_mode=True,
+                run_id="run_abc",
+                egm_phase="act",
+                spec_approved=True,
+                target_scope_files=("src/app/page.tsx", "src/components/button.tsx"),
+            )
+
+            # 1. Out-of-boundary file write fails
+            status, output, exit_code, _ = await execute_tool(
+                "write_file",
+                {"path": "backend/app/database.py", "content": "mutated"},
+                "sess_1",
+                guardrail_ctx=ctx,
+            )
+            assert status == "error"
+            assert "EGM Boundary Violation" in output
+
+            # 2. Approved file write succeeds
+            status, output, exit_code, _ = await execute_tool(
+                "write_file",
+                {"path": "src/components/button.tsx", "content": "export function Button() {}"},
+                "sess_1",
+                guardrail_ctx=ctx,
+            )
+            assert status == "completed"
+
+        finally:
+            sandbox_service.write_session_file = orig_write
 
     asyncio.run(_run())

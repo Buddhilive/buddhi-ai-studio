@@ -83,6 +83,66 @@ class AgentEventEmitter:
     async def emit_error(self, message: str, code: str = "agent_error") -> None:
         await self.emit("error", data={"message": message, "code": code})
 
+    async def emit_egm_phase(self, phase: str, round_num: int = 1, max_rounds: int = 3) -> None:
+        await self.emit("egm.phase", data={"phase": phase, "round": round_num, "max_rounds": max_rounds})
+
+    async def emit_egm_reviewer_status(
+        self,
+        stage: str,
+        persona: str,
+        status: str,
+        round_num: int = 1,
+        findings_count: int | None = None,
+    ) -> None:
+        await self.emit(
+            "egm.reviewer.status",
+            data={
+                "stage": stage,
+                "persona": persona,
+                "status": status,
+                "round": round_num,
+                "findings_count": findings_count,
+            },
+        )
+
+    async def emit_egm_artifact(
+        self,
+        artifact_type: str,
+        path: str,
+        round_num: int = 1,
+        summary: dict[str, Any] | None = None,
+    ) -> None:
+        await self.emit(
+            "egm.artifact",
+            data={
+                "artifact_type": artifact_type,
+                "path": path,
+                "round": round_num,
+                "summary": summary or {},
+            },
+        )
+
+    async def emit_egm_gate_pause(
+        self,
+        round_num: int = 1,
+        spec_path: str = "",
+        blocker_count: int = 0,
+        major_count: int = 0,
+        nit_count: int = 0,
+        review_report: dict[str, Any] | None = None,
+    ) -> None:
+        await self.emit(
+            "egm.gate.pause",
+            data={
+                "round": round_num,
+                "spec_path": spec_path,
+                "blocker_count": blocker_count,
+                "major_count": major_count,
+                "nit_count": nit_count,
+                "review_report": review_report or {},
+            },
+        )
+
     async def emit_run_end(self, status: str, final_output: str | None = None, steps: int = 0) -> None:
         await self.emit("run.end", data={"status": status, "final_output": final_output, "steps": steps})
         await self.close()

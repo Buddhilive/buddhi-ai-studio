@@ -27,3 +27,23 @@
 - **Form Controls & Labels**: All numeric inputs and mode selectors are bound via `useId()` and associated `<Label htmlFor={...}>`.
 - **Non-Reliance on Color**: Hardware viability warnings and depth recommendations include explicit text, badge labels, and icons.
 - **Confirmation Dialog**: Engine reload modal uses Radix `Dialog` with focus trapping, `Escape` key cancellation, and clear warning descriptions of memory reallocation.
+
+### 6. Elephant-Goldfish Review Gate & Triage Panel (`src/components/ai-elements/egm-review-panel.tsx`, `src/components/ai-elements/egm-phase-badge.tsx`)
+- **Focus Management (SC-007, FR-016)**: On gate entry / component mount, keyboard focus is automatically shifted to the triage panel heading via `tabIndex={-1}` and `ref.current?.focus()`, alerting keyboard/screen-reader users immediately that execution is paused at the human review gate.
+- **Accessible `<fieldset>` Grouping**: Each finding item is wrapped in an accessible `<fieldset>` with an explicit `<legend className="sr-only">`, ensuring screen readers announce the context of the radio/button triage choices (`Accept`, `Reject`, `Defer`).
+- **Non-Reliance on Color for Severity**:
+  - Blocker: text prefix `[BLOCKER]`, OctagonAlertIcon, distinct border and non-color text.
+  - Major: text prefix `[MAJOR]`, AlertTriangleIcon, distinct border and non-color text.
+  - Nit: text prefix `[NIT]`, InfoIcon, distinct border and non-color text.
+- **Contrast Ratios Verified (WCAG 2.2 AA Standard Profile)**:
+  - Amber (Elephant): `#b45309` on `#ffffff` = **5.02:1** (PASS >= 4.5:1); `#fcd34d` on `#09090b` = **13.80:1** (PASS >= 4.5:1)
+  - Sky (Goldfish): `#075985` on `#ffffff` = **7.56:1** (PASS >= 4.5:1); `#7dd3fc` on `#09090b` = **11.93:1** (PASS >= 4.5:1)
+  - Blocker Badge: `#b91c1c` on `#ffffff` = **6.47:1** (PASS >= 4.5:1); `#f87171` on `#09090b` = **7.19:1** (PASS >= 4.5:1)
+  - Major Badge: `#b45309` on `#ffffff` = **5.02:1** (PASS >= 4.5:1); `#fbbf24` on `#09090b` = **11.92:1** (PASS >= 4.5:1)
+  - Nit Badge: `#15803d` on `#ffffff` = **5.02:1** (PASS >= 4.5:1); `#4ade80` on `#09090b` = **11.42:1** (PASS >= 4.5:1)
+- **Live Status & Feedback**: Submit and quick-action buttons include `disabled={isSubmitting}` and live state announcements with `aria-live="polite"`.
+
+### 7. Elephant-Goldfish Settings Configuration (`src/components/settings/egm-settings.tsx`)
+- **Accessible Slider Controls**: Max sharpening rounds slider uses semantic `<input type="range">` with `aria-valuemin="1"`, `aria-valuemax="5"`, `aria-valuenow`, and `aria-valuetext="N sharpening rounds"`.
+- **Accessible Select & Form Controls**: Reviewer concurrency selector and toggles use Radix UI primitives with full keyboard arrow navigation, `Escape` key close, and associated `<Label htmlFor={...}>`.
+- **Estimate Telemetry**: Live readout container is configured with `aria-live="polite"` announcing latency and memory estimates as concurrency and round parameters adjust.

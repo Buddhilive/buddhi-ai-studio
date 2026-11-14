@@ -1,5 +1,8 @@
 # Memory Mutation Log
 
+## 2026-11-13 13:20:12Z - [SAVED] `mem-decision-2026-11-13-spec-009-elephant-goldfish-model-egm-langgraph-ar`: 2026-11-13 (spec 009): Elephant-Goldfish Model (EGM) LangGraph Architecture
+Kind: decision, Summary: Opt-in EGM spec-first LangGraph workflow with zero-context GoldfishRunner, DuckDB BLOB checkpointer + sandbox dual storage, and fail-closed verification.
+
 ## 2026-11-10 23:16:00Z - [MIGRATED] `legacy-bundle`: Migrated 5 legacy memory entries to OKF concepts
 
 ## 2026-11-10 23:16:00Z - [SAVED] `mem-feedback-this-project-what-to-avoid-what-to-keep-doing-get-ap`: this project — what to avoid, what to keep doing — get ap...

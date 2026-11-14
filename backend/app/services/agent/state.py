@@ -43,3 +43,18 @@ class AgentState(TypedDict, total=False):
     error: str | None
     is_rlm_mode: bool
     rlm_telemetry: dict[str, Any] | None
+
+    # EGM (Elephant-Goldfish Model) extensions
+    is_egm_mode: bool
+    egm_skill_mode: Literal["standard", "brainstorm", "bootstrap", "drift_report"]
+    egm_phase: Literal["brainstorm", "draft", "goldfish_review", "resolve", "act", "goldfish_verify", "drift_report"] | None
+    egm_round: int
+    egm_max_rounds: int
+    egm_approved: bool
+    spec_contract: dict[str, Any] | None
+    review_report: dict[str, Any] | None
+    resolution_decisions: list[dict[str, Any]]
+    allowed_write_paths: list[str]
+    egm_artifacts: dict[str, str]
+    concepts_brief: str | None
+    drift_report: str | None

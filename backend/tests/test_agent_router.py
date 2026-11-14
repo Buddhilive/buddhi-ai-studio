@@ -49,6 +49,41 @@ def test_agent_cancel_endpoint():
     asyncio.run(_run())
 
 
+def test_egm_settings_and_artifacts_endpoints():
+    client = TestClient(app)
+
+    # 1. Test GET /api/settings/egm
+    res = client.get("/api/settings/egm")
+    assert res.status_code == 200
+    data = res.json()
+    assert "enabled" in data
+    assert "max_review_rounds" in data
+
+    # 2. Test PUT /api/settings/egm
+    put_res = client.put(
+        "/api/settings/egm",
+        json={
+            "enabled": True,
+            "max_review_rounds": 5,
+            "goldfish_concurrency": 2,
+            "reviewer_timeout_s": 120,
+            "context_budget_tokens": 8192,
+            "enable_brainstorm": True,
+            "default_skill_mode": "standard",
+        },
+    )
+    assert put_res.status_code == 200
+    assert put_res.json()["enabled"] is True
+    assert put_res.json()["max_review_rounds"] == 5
+
+    # Reset
+    client.put("/api/settings/egm", json=data)
+
+    # 3. Test 404 on artifacts for nonexistent run
+    art_res = client.get("/v1/agent/runs/nonexistent_123/artifacts")
+    assert art_res.status_code == 404
+
+
 def test_agent_concurrency_throttle():
     async def _run():
         with patch.object(

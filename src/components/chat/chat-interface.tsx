@@ -16,10 +16,6 @@ import {
     Message,
     MessageBranch,
     MessageBranchContent,
-    MessageBranchNext,
-    MessageBranchPage,
-    MessageBranchPrevious,
-    MessageBranchSelector,
     MessageContent,
     MessageResponse,
 } from "@/components/ai-elements/message";
@@ -60,14 +56,10 @@ import { SpeechInput } from "@/components/ai-elements/speech-input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useModelCatalog, type ModelCatalogEntry } from "@/hooks/use-model-catalog";
 import Link from "next/link";
-import { AlertTriangleIcon } from "lucide-react";
-import { BrainIcon } from "lucide-react";
-import type { UIMessage } from "ai";
-import { DefaultChatTransport } from "ai";
+import { AlertTriangleIcon, BrainIcon, CheckIcon, ShieldCheckIcon } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { DefaultChatTransport, type UIMessage } from "ai";
 import { useChat } from "@ai-sdk/react";
-import { CheckIcon } from "lucide-react";
-import { nanoid } from "nanoid";
-import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentMessagePart } from "@/components/chat/agent-parts";
 import { toast } from "sonner";
 const AttachmentItem = ({
@@ -151,20 +143,18 @@ export default function ChatInterface() {
             ),
         [catalog, states]
     );
-    const [model, setModel] = useState<string | undefined>(undefined);
-    useEffect(() => {
-        if (!model && downloadedLlmModels.length > 0) {
-            setModel(downloadedLlmModels[0].id);
-        }
-    }, [model, downloadedLlmModels]);
+    const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
+    const model = selectedModel ?? downloadedLlmModels[0]?.id;
+    const setModel = setSelectedModel;
     const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
     const [text, setText] = useState<string>("");
     const [showReasoning, setShowReasoning] = useState<boolean>(true);
+    const [egmMode, setEgmMode] = useState<boolean>(false);
 
     const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
     const { messages, status, stop, sendMessage, clearError } = useChat({
         transport,
-        onError: (err) => {
+        onError: (err: Error) => {
             toast.error("Couldn't get a response", {
                 description:
                     err.message ||
@@ -179,8 +169,6 @@ export default function ChatInterface() {
         [downloadedLlmModels, model]
     );
 
-
-
     const handleSubmit = useCallback(
         (message: PromptInputMessage) => {
             const hasText = Boolean(message.text);
@@ -192,12 +180,16 @@ export default function ChatInterface() {
 
             void sendMessage(
                 { text: message.text, files: message.files },
-                { body: { model, enableThinking: showReasoning } }
+                { body: { model, enableThinking: showReasoning, egmMode } }
             );
             setText("");
         },
-        [sendMessage, model, showReasoning]
+        [sendMessage, model, showReasoning, egmMode]
     );
+
+    const toggleEgmMode = useCallback(() => {
+        setEgmMode((prev) => !prev);
+    }, []);
 
 
     const handleTranscriptionChange = useCallback((transcript: string) => {
@@ -218,7 +210,7 @@ export default function ChatInterface() {
     const handleModelSelect = useCallback((modelId: string) => {
         setModel(modelId);
         setModelSelectorOpen(false);
-    }, []);
+    }, [setModel]);
 
     const isSubmitDisabled = useMemo(() => {
         if (!model) return true;
@@ -236,13 +228,12 @@ export default function ChatInterface() {
         <div className="relative flex h-[calc(100vh-80px)] flex-col divide-y overflow-hidden">
             <Conversation>
                 <ConversationContent>
-                    {messages.map((message) => {
-                        const reasoningPart = message.parts?.find((p) => p.type === "reasoning");
-                        const textParts = message.parts?.filter((p) => p.type === "text") || [];
-                        const fileParts = message.parts?.filter((p) => p.type === "file") || [];
-                        const otherParts = message.parts?.filter((p) => p.type !== "text" && p.type !== "reasoning" && p.type !== "file") || [];
-                        const isReasoningStreaming =
-                            (reasoningPart as any)?.state === "streaming";
+                    {messages.map((message: UIMessage) => {
+                        const reasoningPart = message.parts?.find((p) => (p as { type: string }).type === "reasoning") as { state?: string; text?: string } | undefined;
+                        const textParts = (message.parts?.filter((p) => (p as { type: string }).type === "text") || []) as Array<{ text: string }>;
+                        const fileParts = (message.parts?.filter((p) => (p as { type: string }).type === "file") || []) as Array<AttachmentData>;
+                        const otherParts = (message.parts?.filter((p) => (p as { type: string }).type !== "text" && (p as { type: string }).type !== "reasoning" && (p as { type: string }).type !== "file") || []) as Array<Record<string, unknown>>;
+                        const isReasoningStreaming = reasoningPart?.state === "streaming";
 
                         return (
                             <MessageBranch defaultBranch={0} key={message.id}>
@@ -254,7 +245,7 @@ export default function ChatInterface() {
                                         <div className="w-full">
                                             {fileParts.length > 0 && (
                                                 <Attachments variant="grid" className="justify-end">
-                                                    {fileParts.map((part: any, idx) => (
+                                                    {fileParts.map((part, idx) => (
                                                         <Attachment
                                                             data={{ ...part, id: `${message.id}-file-${idx}` }}
                                                             key={idx}
@@ -268,19 +259,19 @@ export default function ChatInterface() {
                                                 <Reasoning isStreaming={isReasoningStreaming}>
                                                     <ReasoningTrigger />
                                                     <ReasoningContent>
-                                                        {(reasoningPart as any).text}
+                                                        {reasoningPart.text || ""}
                                                     </ReasoningContent>
                                                 </Reasoning>
                                             )}
                                             {otherParts.length > 0 && (
                                                 <div className="my-2 space-y-2">
-                                                    {otherParts.map((part: any, idx: number) => (
+                                                    {otherParts.map((part, idx: number) => (
                                                         <AgentMessagePart key={idx} part={part} />
                                                     ))}
                                                 </div>
                                             )}
                                             <MessageContent>
-                                                {textParts.map((p: any, i) => (
+                                                {textParts.map((p, i) => (
                                                     <MessageResponse key={i}>{p.text}</MessageResponse>
                                                 ))}
                                             </MessageContent>
@@ -343,6 +334,15 @@ export default function ChatInterface() {
                                 >
                                     <BrainIcon size={16} />
                                     <span>Reasoning</span>
+                                </PromptInputButton>
+                                <PromptInputButton
+                                    onClick={toggleEgmMode}
+                                    variant={egmMode ? "default" : "ghost"}
+                                    title="Spec-first coding with dual Elephant (Architect) and Goldfish (Reviewer) model"
+                                    aria-label="Toggle Elephant-Goldfish Spec-First Mode"
+                                >
+                                    <ShieldCheckIcon size={16} />
+                                    <span>EGM Spec-First</span>
                                 </PromptInputButton>
                                 <ModelSelector
                                     onOpenChange={setModelSelectorOpen}

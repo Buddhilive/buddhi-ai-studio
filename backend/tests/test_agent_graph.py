@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import uuid
 from unittest.mock import patch
 import pytest
 
@@ -18,10 +19,11 @@ def test_agent_graph_full_cycle():
         engine = ScriptedInferenceEngine()
         mock_sandbox = create_mock_sandbox()
 
-        emitter = AgentEventEmitter("test_run_123")
+        run_id = f"test_run_{uuid.uuid4().hex}"
+        emitter = AgentEventEmitter(run_id)
 
         initial_state: AgentState = {
-            "run_id": "test_run_123",
+            "run_id": run_id,
             "messages": [ChatMessage(role="user", content="Create hello.py and run it")],
             "plan": [],
             "pending_tool_calls": [],
@@ -34,6 +36,8 @@ def test_agent_graph_full_cycle():
             "session_id": "test_sess_1",
             "final_output": None,
             "error": None,
+            "is_egm_mode": False,
+            "is_rlm_mode": False,
         }
 
         with patch("app.services.agent.nodes.inference_engine_manager.generate_stream", engine.generate_stream), \
@@ -41,7 +45,7 @@ def test_agent_graph_full_cycle():
 
             result = await agent_graph.ainvoke(
                 initial_state,
-                config={"configurable": {"emitter": emitter, "thread_id": "test_run_123"}},
+                config={"configurable": {"emitter": emitter, "thread_id": run_id}},
             )
 
             assert result["status"] == "completed"
@@ -58,22 +62,25 @@ def test_agent_graph_max_steps_termination():
         mock_sandbox = create_mock_sandbox()
 
         # Engine that always retries to trigger max steps
-        class InfiniteLoopEngine:
-            async def generate_stream(self, *args, **kwargs):
-                from app.schemas.chat import ChatCompletionChunkDelta
-                prompt = " ".join(str(m.content) for m in kwargs.get("messages", []))
-                if "PHASE: REVIEW" in prompt:
-                    yield ChatCompletionChunkDelta(content="VERDICT: retry")
-                elif "PHASE: PLAN" in prompt:
-                    yield ChatCompletionChunkDelta(content="1. Try again")
+        class InfiniteRetryEngine(ScriptedInferenceEngine):
+            async def generate_stream(self, messages, *args, **kwargs):
+                prompt = " ".join(str(m.content) for m in messages if hasattr(m, "content"))
+                if "PHASE: ACT" in prompt:
+                    from app.schemas.chat import ChatCompletionChunkDelta
+                    yield ChatCompletionChunkDelta(content='<|tool_call>call:run_command{"command": "python retry.py"}<tool_call|>')
+                elif "PHASE: REVIEW" in prompt:
+                    from app.schemas.chat import ChatCompletionChunkDelta
+                    yield ChatCompletionChunkDelta(content="Review: Retry needed.\nVERDICT: retry")
                 else:
-                    yield ChatCompletionChunkDelta(content='<|tool_call>call:run_command{"command": "echo retry"}<tool_call|>')
+                    async for chunk in super().generate_stream(messages, *args, **kwargs):
+                        yield chunk
 
-        engine = InfiniteLoopEngine()
-        emitter = AgentEventEmitter("test_loop_run")
+        engine = InfiniteRetryEngine()
+        run_id = f"test_loop_{uuid.uuid4().hex}"
+        emitter = AgentEventEmitter(run_id)
 
         initial_state: AgentState = {
-            "run_id": "test_loop_run",
+            "run_id": run_id,
             "messages": [ChatMessage(role="user", content="Loop forever")],
             "plan": [],
             "pending_tool_calls": [],
@@ -86,6 +93,8 @@ def test_agent_graph_max_steps_termination():
             "session_id": "test_sess_1",
             "final_output": None,
             "error": None,
+            "is_egm_mode": False,
+            "is_rlm_mode": False,
         }
 
         with patch("app.services.agent.nodes.inference_engine_manager.generate_stream", engine.generate_stream), \
@@ -93,7 +102,7 @@ def test_agent_graph_max_steps_termination():
 
             result = await agent_graph.ainvoke(
                 initial_state,
-                config={"configurable": {"emitter": emitter, "thread_id": "test_run_123"}},
+                config={"configurable": {"emitter": emitter, "thread_id": run_id}},
             )
 
             # Must terminate strictly at max_steps budget (SC-002)

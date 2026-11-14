@@ -26,6 +26,7 @@ import { CpuIcon, KeyIcon, Loader2Icon, SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 import { EngineReloadDialog } from "@/components/settings/engine-reload-dialog";
 import { RlmConfig, RlmSettings } from "@/components/settings/rlm-settings";
+import { EgmConfig, EgmSettings } from "@/components/settings/egm-settings";
 
 interface SupportedBackend {
   id: string;
@@ -68,17 +69,21 @@ export default function SettingsPage() {
   // RLM Settings state
   const [rlmConfig, setRlmConfig] = useState<RlmConfig | null>(null);
 
+  // EGM Settings state
+  const [egmConfig, setEgmConfig] = useState<EgmConfig | null>(null);
+
   // System Resource Recommendation state
   const [systemResources, setSystemResources] = useState<SystemResources | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshAll = useCallback(async () => {
     try {
-      const [hfRes, infRes, resRes, rlmRes] = await Promise.all([
+      const [hfRes, infRes, resRes, rlmRes, egmRes] = await Promise.all([
         fetch("/api/settings/hf-token"),
         fetch("/api/settings/inference"),
         fetch("/api/settings/system-resources"),
         fetch("/api/settings/rlm"),
+        fetch("/api/settings/egm"),
       ]);
 
       if (hfRes.ok) {
@@ -103,6 +108,11 @@ export default function SettingsPage() {
       if (rlmRes.ok) {
         const rlmData = await rlmRes.json();
         setRlmConfig(rlmData);
+      }
+
+      if (egmRes.ok) {
+        const egmData = await egmRes.json();
+        setEgmConfig(egmData);
       }
     } catch (err) {
       console.error("[settings] failed to load settings:", err);
@@ -414,6 +424,27 @@ export default function SettingsPage() {
           contextWindow={maxNumToken}
           maxViableTokens={systemResources?.max_viable_tokens}
           modelAssumed={systemResources?.model_assumed}
+        />
+      )}
+
+      {/* EGM Spec-Driven Settings Card */}
+      {!isLoading && egmConfig && (
+        <EgmSettings
+          config={egmConfig}
+          onChange={async (updated) => {
+            setEgmConfig(updated);
+            try {
+              await fetch("/api/settings/egm", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updated),
+              });
+              toast.success("EGM settings updated");
+            } catch {
+              toast.error("Failed to save EGM settings");
+            }
+          }}
+          disabled={isLoading || isSavingInference}
         />
       )}
 

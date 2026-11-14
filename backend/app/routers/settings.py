@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.core import settings_store
 from app.schemas.settings import (
+    EgmSettings,
     HfTokenRequest,
     HfTokenStatus,
     InferenceSettings,
@@ -87,5 +88,17 @@ def get_rlm_settings() -> RlmSettingsResponse:
 def update_rlm_settings(request: RlmSettings) -> RlmSettingsResponse:
     settings_store.set_rlm_settings(request.model_dump())
     return get_rlm_settings()
+
+
+@router.get("/egm", response_model=EgmSettings)
+def get_egm_settings_api() -> EgmSettings:
+    data = settings_store.get_egm_settings()
+    return EgmSettings(**data)
+
+
+@router.put("/egm", response_model=EgmSettings)
+def update_egm_settings_api(request: EgmSettings) -> EgmSettings:
+    settings_store.set_egm_settings(request.model_dump())
+    return request
 
 

@@ -62,3 +62,13 @@ class SystemResourceRecommendation(BaseModel):
     max_viable_tokens: int
     model_assumed: str = "Gemma 4 E4B"
     reasoning: str
+
+
+class EgmSettings(BaseModel):
+    enabled: bool = False
+    max_review_rounds: int = Field(default=3, ge=1, le=10)
+    goldfish_concurrency: int = Field(default=1, ge=1, le=4)
+    reviewer_timeout_s: int = Field(default=90, ge=15, le=600)
+    context_budget_tokens: int = Field(default=4096, ge=1024, le=32768)
+    enable_brainstorm: bool = False
+    default_skill_mode: Literal["standard", "brainstorm", "bootstrap", "drift_report"] = "standard"

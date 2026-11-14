@@ -50,6 +50,32 @@ def test_route_after_act():
     assert route_after_act(state) == "review"
 
 
+def test_egm_routing():
+    # EGM mode on -> routes to draft
+    state: AgentState = {"status": "running", "is_egm_mode": True, "egm_skill_mode": "standard"}
+    assert route_after_analyze(state) == "draft"
+
+    # Brainstorm mode -> routes to brainstorm
+    state = {"status": "running", "is_egm_mode": True, "egm_skill_mode": "brainstorm"}
+    assert route_after_analyze(state) == "brainstorm"
+
+    # Drift report mode -> routes to drift_report
+    state = {"status": "running", "is_egm_mode": True, "egm_skill_mode": "drift_report"}
+    assert route_after_analyze(state) == "drift_report"
+
+    # Act routes to goldfish_verify in EGM mode
+    state = {"status": "running", "is_egm_mode": True, "pending_tool_calls": []}
+    assert route_after_act(state) == "goldfish_verify"
+
+    # Observe routes to goldfish_verify in EGM mode
+    assert route_after_observe(state) == "goldfish_verify"
+
+    # Default mode regression check
+    state_default: AgentState = {"status": "running", "is_egm_mode": False, "pending_tool_calls": []}
+    assert route_after_act(state_default) == "review"
+    assert route_after_observe(state_default) == "review"
+
+
 def test_route_after_observe():
     state: AgentState = {"status": "running"}
     assert route_after_observe(state) == "review"

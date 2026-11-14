@@ -92,5 +92,14 @@ class Settings(BaseSettings):
     site_crawler_discovery_timeout_s: float = 30.0
     site_crawler_max_discovered_urls: int = 10000
 
+    # EGM (Elephant-Goldfish Model)
+    egm_enabled_default: bool = False
+    egm_max_review_rounds: int = 3
+    egm_goldfish_concurrency: int = 1
+    egm_reviewer_timeout_s: int = 90
+    egm_context_budget_tokens: int = 4096
+    egm_enable_brainstorm: bool = False
+    egm_default_skill_mode: str = "standard"
+
 
 settings = Settings()

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Tuple
+import posixpath
+import re
+import shlex
+from dataclasses import dataclass
+from pathlib import PurePosixPath
+from typing import Any, Literal, Tuple
 
 from app.core.config import settings
 from app.schemas.chat import FunctionDefinition, ToolDefinition
@@ -10,6 +15,40 @@ from app.schemas.sandbox import SandboxExecutionRequest, SandboxSessionCreateReq
 from app.services.sandbox_service import sandbox_service
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ToolGuardrailContext:
+    is_egm_mode: bool = False
+    run_id: str = ""
+    egm_phase: str | None = None
+    spec_approved: bool = False
+    target_scope_files: tuple[str, ...] = ()
+    allowed_write_paths: tuple[str, ...] = ()
+
+
+def validate_workspace_path(path_str: str) -> str:
+    """Canonicalize a relative or absolute /workspace path and verify no path traversal."""
+    if not path_str or "\x00" in path_str:
+        raise ValueError("Invalid path: empty or contains null byte")
+
+    # Reject raw unnormalized .. segments
+    parts = path_str.replace("\\", "/").split("/")
+    if ".." in parts:
+        raise ValueError("Invalid path: traversal segment '..' is prohibited")
+
+    p = PurePosixPath(path_str)
+    if p.is_absolute():
+        if not str(p).startswith("/workspace"):
+            raise ValueError(f"Absolute path '{path_str}' must reside within /workspace")
+        rel = posixpath.relpath(str(p), "/workspace")
+    else:
+        rel = str(p)
+
+    norm = posixpath.normpath(rel)
+    if norm == "." or norm.startswith("../"):
+        raise ValueError(f"Path '{path_str}' escapes workspace boundary")
+    return norm
 
 # Standard tool definitions provided to agent
 AGENT_TOOL_DEFINITIONS = [
@@ -150,6 +189,7 @@ async def execute_tool(
     name: str,
     args: dict[str, Any] | str,
     session_id: str,
+    guardrail_ctx: ToolGuardrailContext | None = None,
 ) -> tuple[str, str, int, bool]:
     """
     Execute a tool against the sandbox session.
@@ -162,7 +202,24 @@ async def execute_tool(
         except Exception:
             args = {"raw_args": args}
 
+    ctx = guardrail_ctx or ToolGuardrailContext()
+
     try:
+        # Phase 1-4 Guardrail check for mutating commands/REPL
+        if ctx.is_egm_mode and not ctx.spec_approved:
+            if name in ("run_command", "run_python_repl"):
+                # Check for obvious file mutation attempts in bash/python commands
+                cmd_content = args.get("command", "") if name == "run_command" else args.get("code", "")
+                mutation_patterns = [r">\s*[^&]", r"\brm\b", r"\bmv\b", r"\bcp\b", r"\btouch\b", r"\bmkdir\b", r"\bopen\s*\([^)]*['\"][w|a]"]
+                for pat in mutation_patterns:
+                    if re.search(pat, cmd_content):
+                        return (
+                            "error",
+                            "EGM Guardrail Violation: mutating shell commands or code execution prohibited before spec approval in Phase 1-4.",
+                            1,
+                            False,
+                        )
+
         if name == "run_command":
             cmd = args.get("command", "")
             if not cmd:
@@ -185,21 +242,58 @@ async def execute_tool(
             content = args.get("content", "")
             if not path:
                 return "error", "Error: 'path' argument is required", 1, False
-            await sandbox_service.write_session_file(session_id, path, content)
-            return "completed", f"File '{path}' written successfully ({len(content)} bytes).", 0, False
+
+            try:
+                norm_path = validate_workspace_path(path)
+            except ValueError as ve:
+                return "error", f"EGM Path Validation Error: {str(ve)}", 1, False
+
+            # EGM Write Boundary Enforcement
+            if ctx.is_egm_mode:
+                if not ctx.spec_approved:
+                    # Phases 1-4: strictly restrict writes to .buddhi/specs/
+                    allowed_prefix = f".buddhi/specs/{ctx.run_id}" if ctx.run_id else ".buddhi/specs"
+                    if not (norm_path.startswith(allowed_prefix) or norm_path.startswith(".buddhi/specs/")):
+                        return (
+                            "error",
+                            f"EGM Guardrail Violation: Phases 1-4 restrict writes strictly to '.buddhi/specs/'. Attempted write to '{norm_path}'.",
+                            1,
+                            False,
+                        )
+                else:
+                    # Phase 5: enforce Target Scope & File Boundary
+                    allowed = set(ctx.target_scope_files) | set(ctx.allowed_write_paths)
+                    # Also permit writing to specs directory during implementation if needed
+                    is_in_scope = norm_path in allowed or any(norm_path.startswith(p) for p in allowed) or norm_path.startswith(".buddhi/specs/")
+                    if not is_in_scope:
+                        return (
+                            "error",
+                            f"EGM Boundary Violation: Path '{norm_path}' is outside approved Target Scope & File Boundary: {list(allowed)}",
+                            1,
+                            False,
+                        )
+
+            await sandbox_service.write_session_file(session_id, norm_path, content)
+            return "completed", f"File '{norm_path}' written successfully ({len(content)} bytes).", 0, False
 
         elif name == "read_file":
             path = args.get("path")
             if not path:
                 return "error", "Error: 'path' argument is required", 1, False
-            content = await sandbox_service.read_session_file(session_id, path)
+            try:
+                norm_path = validate_workspace_path(path)
+            except ValueError as ve:
+                return "error", f"EGM Path Validation Error: {str(ve)}", 1, False
+
+            content = await sandbox_service.read_session_file(session_id, norm_path)
             truncated_content, is_truncated = _truncate_output(content)
             return "completed", truncated_content, 0, is_truncated
 
         elif name == "list_files":
             path = args.get("path", ".")
+            safe_path = shlex.quote(path)
             req = SandboxExecutionRequest(
-                code=f"find {path} -maxdepth 3 -not -path '*/.*'",
+                code=f"find {safe_path} -maxdepth 3 -not -path '*/.*'",
                 language="bash",
                 timeout_s=15,
             )

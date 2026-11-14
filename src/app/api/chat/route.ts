@@ -13,10 +13,12 @@ export async function POST(req: Request) {
     messages,
     model,
     enableThinking = true,
+    egmMode = false,
   }: {
     messages: UIMessage[];
     model: string;
     enableThinking?: boolean;
+    egmMode?: boolean;
   } = await req.json();
 
   const selectedModel = model || "gemma-4-e4b";
@@ -41,6 +43,7 @@ export async function POST(req: Request) {
             messages: modelMessages,
             model: selectedModel,
             enable_thinking: Boolean(enableThinking),
+            egm_mode: Boolean(egmMode),
           }),
         });
 
@@ -154,6 +157,24 @@ export async function POST(req: Request) {
                   writer.write({
                     type: "data-node",
                     data: { node: event.node, event: event.event },
+                  } as unknown as Parameters<typeof writer.write>[0]);
+                  break;
+                }
+
+                case "egm.phase":
+                case "egm.reviewer.status":
+                case "egm.artifact": {
+                  writer.write({
+                    type: "data-egm-status",
+                    data: { event: event.event, ...event.data },
+                  } as unknown as Parameters<typeof writer.write>[0]);
+                  break;
+                }
+
+                case "egm.gate.pause": {
+                  writer.write({
+                    type: "data-egm-review",
+                    data: { ...event.data, run_id: event.run_id },
                   } as unknown as Parameters<typeof writer.write>[0]);
                   break;
                 }
