@@ -72,3 +72,15 @@ class EgmSettings(BaseModel):
     context_budget_tokens: int = Field(default=4096, ge=1024, le=32768)
     enable_brainstorm: bool = False
     default_skill_mode: Literal["standard", "brainstorm", "bootstrap", "drift_report"] = "standard"
+
+
+class HarnessSettings(BaseModel):
+    enabled: bool = True
+    auto_calibrate_uncalibrated: bool = False
+    auto_calibrate_on_retry: bool = True
+    max_calibration_rounds: int = Field(default=1, ge=1, le=3)
+    max_candidates: int = Field(default=2, ge=1, le=3)
+    probe_concurrency: int = Field(default=1, ge=1, le=2)
+    probe_max_steps: int = Field(default=6, ge=2, le=15)
+    probe_timeout_s: int = Field(default=60, ge=15, le=300)
+    experience_max_entries: int = Field(default=50, ge=5, le=200)

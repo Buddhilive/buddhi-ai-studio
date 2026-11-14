@@ -143,6 +143,90 @@ class AgentEventEmitter:
             },
         )
 
+    async def emit_harness_propose(
+        self,
+        round_num: int,
+        trigger_reason: str,
+        rlm_used: bool,
+        candidate_count: int,
+        rejected_static: int = 0,
+    ) -> None:
+        await self.emit(
+            "harness.propose",
+            node="harness_calibrate",
+            data={
+                "round": round_num,
+                "trigger_reason": trigger_reason,
+                "rlm_used": rlm_used,
+                "candidate_count": candidate_count,
+                "rejected_static": rejected_static,
+            },
+        )
+
+    async def emit_harness_probe(
+        self,
+        round_num: int,
+        candidate_id: str,
+        status: str,
+        steps_taken: int,
+        tool_error_count: int,
+        test_pass_rate: float,
+        wall_clock_ms: int,
+        guardrail_violations: list[str] | None = None,
+    ) -> None:
+        await self.emit(
+            "harness.probe",
+            node="harness_calibrate",
+            data={
+                "round": round_num,
+                "candidate_id": candidate_id,
+                "status": status,
+                "steps_taken": steps_taken,
+                "tool_error_count": tool_error_count,
+                "test_pass_rate": test_pass_rate,
+                "wall_clock_ms": wall_clock_ms,
+                "guardrail_violations": guardrail_violations or [],
+            },
+        )
+
+    async def emit_harness_compose(
+        self,
+        round_num: int,
+        status: str,
+        winning_candidate_id: str | None,
+        adopted_components: list[str],
+        rejected_reasons: dict[str, str] | None = None,
+    ) -> None:
+        await self.emit(
+            "harness.compose",
+            node="harness_calibrate",
+            data={
+                "round": round_num,
+                "status": status,
+                "winning_candidate_id": winning_candidate_id,
+                "adopted_components": adopted_components,
+                "rejected_reasons": rejected_reasons or {},
+            },
+        )
+
+    async def emit_harness_distill(
+        self,
+        entry_id: str,
+        workspace_id: str,
+        components_affected: list[str],
+        lesson: str,
+    ) -> None:
+        await self.emit(
+            "harness.distill",
+            node="harness_distill",
+            data={
+                "entry_id": entry_id,
+                "workspace_id": workspace_id,
+                "components_affected": components_affected,
+                "lesson": lesson,
+            },
+        )
+
     async def emit_run_end(self, status: str, final_output: str | None = None, steps: int = 0) -> None:
         await self.emit("run.end", data={"status": status, "final_output": final_output, "steps": steps})
         await self.close()

@@ -101,5 +101,21 @@ class Settings(BaseSettings):
     egm_enable_brainstorm: bool = False
     egm_default_skill_mode: str = "standard"
 
+    # Harness2 (Recursive Agent Harnessing)
+    harness_db_path: Path = BACKEND_ROOT / "data" / "harness.duckdb"
+    harness_enabled_default: bool = True
+    harness_auto_calibrate_uncalibrated: bool = False
+    harness_auto_calibrate_on_retry: bool = True
+    harness_max_calibration_rounds: int = 1
+    harness_max_candidates: int = 2
+    harness_probe_concurrency: int = 1
+    harness_probe_max_steps: int = 6
+    harness_probe_timeout_s: int = 60
+    harness_max_experiences_per_workspace: int = 50
+    harness_experience_token_budget: int = 2048
+    harness_max_overlay_history: int = 20
+    harness_calibration_retention_days: int = 30
+    sandbox_max_active_sessions: int = 8
+
 
 settings = Settings()

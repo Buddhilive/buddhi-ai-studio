@@ -56,7 +56,7 @@ import { SpeechInput } from "@/components/ai-elements/speech-input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useModelCatalog, type ModelCatalogEntry } from "@/hooks/use-model-catalog";
 import Link from "next/link";
-import { AlertTriangleIcon, BrainIcon, CheckIcon, ShieldCheckIcon } from "lucide-react";
+import { AlertTriangleIcon, BrainIcon, CheckIcon, ShieldCheckIcon, SparklesIcon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useChat } from "@ai-sdk/react";
@@ -150,6 +150,7 @@ export default function ChatInterface() {
     const [text, setText] = useState<string>("");
     const [showReasoning, setShowReasoning] = useState<boolean>(true);
     const [egmMode, setEgmMode] = useState<boolean>(false);
+    const [harnessCalibrate, setHarnessCalibrate] = useState<boolean>(false);
 
     const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
     const { messages, status, stop, sendMessage, clearError } = useChat({
@@ -180,15 +181,19 @@ export default function ChatInterface() {
 
             void sendMessage(
                 { text: message.text, files: message.files },
-                { body: { model, enableThinking: showReasoning, egmMode } }
+                { body: { model, enableThinking: showReasoning, egmMode, harnessCalibrate } }
             );
             setText("");
         },
-        [sendMessage, model, showReasoning, egmMode]
+        [sendMessage, model, showReasoning, egmMode, harnessCalibrate]
     );
 
     const toggleEgmMode = useCallback(() => {
         setEgmMode((prev) => !prev);
+    }, []);
+
+    const toggleHarnessCalibrate = useCallback(() => {
+        setHarnessCalibrate((prev) => !prev);
     }, []);
 
 
@@ -343,6 +348,16 @@ export default function ChatInterface() {
                                 >
                                     <ShieldCheckIcon size={16} />
                                     <span>EGM Spec-First</span>
+                                </PromptInputButton>
+                                <PromptInputButton
+                                    onClick={toggleHarnessCalibrate}
+                                    variant={harnessCalibrate ? "default" : "ghost"}
+                                    title="Run Level 1 Propose-Probe-Compose calibration before planning"
+                                    aria-label="Toggle Harness2 Calibration"
+                                    aria-pressed={harnessCalibrate}
+                                >
+                                    <SparklesIcon size={16} />
+                                    <span>Calibrate Harness</span>
                                 </PromptInputButton>
                                 <ModelSelector
                                     onOpenChange={setModelSelectorOpen}

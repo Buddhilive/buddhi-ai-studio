@@ -58,3 +58,13 @@ class AgentState(TypedDict, total=False):
     egm_artifacts: dict[str, str]
     concepts_brief: str | None
     drift_report: str | None
+
+    # Harness2 (Recursive Agent Harnessing) extensions
+    workspace_id: str
+    harness_mode: Literal["auto", "calibrate", "off"]
+    harness_overlay: dict[str, Any] | None
+    harness_experiences: list[dict[str, Any]]
+    harness_calibration_rounds: int
+    harness_max_calibration_rounds: int
+    harness_last_failure_sig: str | None
+    harness_report: dict[str, Any] | None

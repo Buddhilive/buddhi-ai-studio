@@ -20,10 +20,12 @@ class RlmSession:
         session_id: str,
         service: SandboxService = sandbox_service,
         repo_mount_path: str | None = None,
+        harness_scripts: dict[str, str] | None = None,
     ) -> None:
         self.session_id = session_id
         self._service = service
         self.repo_mount_path = repo_mount_path
+        self.harness_scripts = harness_scripts or {}
 
     async def initialize(self) -> None:
         """Injects helper scripts into the sandbox."""
@@ -34,6 +36,12 @@ class RlmSession:
             "rlm_helpers.py",
             RLM_HELPERS_CODE,
         )
+        for sname, sbody in self.harness_scripts.items():
+            await self._service.write_session_file(
+                self.session_id,
+                f".buddhi/harness/scripts/{sname}",
+                sbody,
+            )
 
     async def execute_code(self, python_code: str, timeout_s: int = 60) -> SandboxExecutionResult:
         """Executes Python code in the RLM sandbox session."""
@@ -75,6 +83,7 @@ class RlmSessionManager:
         self,
         timeout_s: int | None = None,
         repo_mount_path: str | None = None,
+        harness_scripts: dict[str, str] | None = None,
     ) -> RlmSession:
         ttl = timeout_s or settings.sandbox_rlm_idle_ttl_s
         req = SandboxSessionCreateRequest(
@@ -90,4 +99,5 @@ class RlmSessionManager:
             session_id=resp.session_id,
             service=self._service,
             repo_mount_path=repo_mount_path,
+            harness_scripts=harness_scripts,
         )

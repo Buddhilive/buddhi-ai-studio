@@ -18,9 +18,35 @@ def is_repeated_action(recent_actions: list[str] | None, threshold: int = 3) -> 
     return recent_actions[-threshold:] == [last_action] * threshold
 
 
-def route_after_analyze(state: AgentState) -> Literal["plan", "rlm_run", "draft", "brainstorm", "drift_report", "end"]:
+def _should_calibrate_on_retry(state: AgentState) -> bool:
+    harness_mode = state.get("harness_mode") or "auto"
+    if harness_mode == "off":
+        return False
+    rounds = int(state.get("harness_calibration_rounds") or 0)
+    max_rounds = int(state.get("harness_max_calibration_rounds") or 1)
+    if rounds >= max_rounds:
+        return False
+    from app.services.agent.harness.calibrator import compute_failure_signature
+    sig = compute_failure_signature(state.get("observations") or [], state.get("error"))
+    if state.get("harness_last_failure_sig") == sig:
+        return False
+    return True
+
+
+def _should_distill(state: AgentState) -> bool:
+    report = state.get("harness_report") or {}
+    return report.get("status") == "adopted" and bool(report.get("adopted_components"))
+
+
+def route_after_analyze(
+    state: AgentState,
+) -> Literal["plan", "rlm_run", "draft", "brainstorm", "drift_report", "harness_calibrate", "end"]:
     if state.get("status") in ("failed", "cancelled"):
         return "end"
+    harness_mode = state.get("harness_mode") or "auto"
+    rounds = int(state.get("harness_calibration_rounds") or 0)
+    if harness_mode == "calibrate" and rounds == 0:
+        return "harness_calibrate"
     if state.get("is_egm_mode"):
         mode = state.get("egm_skill_mode", "standard")
         if mode == "brainstorm":
@@ -29,6 +55,23 @@ def route_after_analyze(state: AgentState) -> Literal["plan", "rlm_run", "draft"
             return "drift_report"
         elif mode == "bootstrap":
             return "rlm_run"
+        return "draft"
+    if state.get("is_rlm_mode"):
+        return "rlm_run"
+    return "plan"
+
+
+def route_after_harness_calibrate(
+    state: AgentState,
+) -> Literal["plan", "draft", "brainstorm", "rlm_run", "end"]:
+    if state.get("status") in ("failed", "cancelled"):
+        return "end"
+    if state.get("is_egm_mode"):
+        if state.get("egm_approved"):
+            return "plan"
+        mode = state.get("egm_skill_mode", "standard")
+        if mode == "brainstorm" and not state.get("concepts_brief"):
+            return "brainstorm"
         return "draft"
     if state.get("is_rlm_mode"):
         return "rlm_run"
@@ -83,7 +126,9 @@ def route_after_resolve(state: AgentState) -> Literal["plan", "draft", "goldfish
     return "goldfish_review"
 
 
-def route_after_goldfish_verify(state: AgentState) -> Literal["plan", "act", "end"]:
+def route_after_goldfish_verify(
+    state: AgentState,
+) -> Literal["plan", "act", "harness_calibrate", "harness_distill", "end"]:
     step = state.get("step", 0)
     max_steps = state.get("max_steps", 15)
 
@@ -95,9 +140,9 @@ def route_after_goldfish_verify(state: AgentState) -> Literal["plan", "act", "en
 
     verdict = state.get("verdict")
     if verdict == "pass":
-        return "end"
+        return "harness_distill" if _should_distill(state) else "end"
     elif verdict == "retry":
-        return "plan"
+        return "harness_calibrate" if _should_calibrate_on_retry(state) else "plan"
     elif verdict == "continue":
         return "act"
 
@@ -105,7 +150,9 @@ def route_after_goldfish_verify(state: AgentState) -> Literal["plan", "act", "en
     return "end"
 
 
-def route_after_review(state: AgentState) -> Literal["plan", "act", "end"]:
+def route_after_review(
+    state: AgentState,
+) -> Literal["plan", "act", "harness_calibrate", "harness_distill", "end"]:
     step = state.get("step", 0)
     max_steps = state.get("max_steps", 15)
 
@@ -117,9 +164,9 @@ def route_after_review(state: AgentState) -> Literal["plan", "act", "end"]:
 
     verdict = state.get("verdict")
     if verdict == "pass":
-        return "end"
+        return "harness_distill" if _should_distill(state) else "end"
     elif verdict == "retry":
-        return "plan"
+        return "harness_calibrate" if _should_calibrate_on_retry(state) else "plan"
     elif verdict == "continue":
         return "act"
 

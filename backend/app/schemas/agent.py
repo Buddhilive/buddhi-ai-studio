@@ -91,6 +91,8 @@ class AgentRunRequest(BaseModel):
     egm_skill_mode: Literal["standard", "brainstorm", "bootstrap", "drift_report"] = "standard"
     egm_max_rounds: int | None = None
     spec_path: str | None = None
+    workspace_id: str | None = None
+    harness_mode: Literal["auto", "calibrate", "off"] | None = None
 
 
 AgentEventType = Literal[
@@ -108,6 +110,10 @@ AgentEventType = Literal[
     "egm.reviewer.status",
     "egm.artifact",
     "egm.gate.pause",
+    "harness.propose",
+    "harness.probe",
+    "harness.compose",
+    "harness.distill",
 ]
 
 

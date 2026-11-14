@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from app.core import settings_store
 from app.schemas.settings import (
     EgmSettings,
+    HarnessSettings,
     HfTokenRequest,
     HfTokenStatus,
     InferenceSettings,
@@ -99,6 +100,17 @@ def get_egm_settings_api() -> EgmSettings:
 @router.put("/egm", response_model=EgmSettings)
 def update_egm_settings_api(request: EgmSettings) -> EgmSettings:
     settings_store.set_egm_settings(request.model_dump())
+    return request
+
+
+@router.get("/harness", response_model=HarnessSettings)
+def get_harness_settings_api() -> HarnessSettings:
+    return HarnessSettings(**settings_store.get_harness_settings())
+
+
+@router.put("/harness", response_model=HarnessSettings)
+def update_harness_settings_api(request: HarnessSettings) -> HarnessSettings:
+    settings_store.set_harness_settings(request.model_dump())
     return request
 
 

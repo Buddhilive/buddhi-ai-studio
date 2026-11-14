@@ -43,7 +43,12 @@ async def draft_node(state: AgentState, emitter: AgentEventEmitter | None = None
 
     user_msgs = state.get("messages", [])
     brief = state.get("concepts_brief")
-    draft_messages = build_draft_messages(user_msgs, concepts_brief=brief)
+    draft_messages = build_draft_messages(
+        user_msgs,
+        concepts_brief=brief,
+        harness_overlay=state.get("harness_overlay"),
+        harness_experiences=state.get("harness_experiences"),
+    )
 
     # Elephant drafts the design spec
     content, reasoning = await generate_with_streaming(
@@ -170,7 +175,14 @@ async def resolve_node(state: AgentState, emitter: AgentEventEmitter | None = No
     accept_decisions = [d for d in decisions if d.get("decision") == "accept"]
     if accept_decisions:
         user_msgs = state.get("messages", [])
-        resolve_messages = build_resolve_messages(user_msgs, current_spec, str(review_report), accept_decisions)
+        resolve_messages = build_resolve_messages(
+            user_msgs,
+            current_spec,
+            str(review_report),
+            accept_decisions,
+            harness_overlay=state.get("harness_overlay"),
+            harness_experiences=state.get("harness_experiences"),
+        )
         revised_content, _ = await generate_with_streaming(
             messages=resolve_messages,
             model_id=settings.agent_default_model,
@@ -246,6 +258,8 @@ async def goldfish_verify_node(state: AgentState, emitter: AgentEventEmitter | N
         target_scope_files=target_scope,
     )
     verify_msgs = runner.build_verify_messages(inp)
+
+    from app.services.inference_service import inference_engine_manager
 
     output_parts: list[str] = []
     async for delta in inference_engine_manager.generate_stream(
@@ -404,6 +418,14 @@ async def drift_report_node(state: AgentState, emitter: AgentEventEmitter | None
         lines.append("## Diff Statistics")
         lines.append("```text")
         lines.append(diff_part)
+        lines.append("```")
+        lines.append("")
+
+    harness_cal = (state.get("egm_artifacts") or {}).get("harness_calibration_report")
+    if harness_cal:
+        lines.append("## Harness2 Calibration Adaptations")
+        lines.append("```json")
+        lines.append(str(harness_cal))
         lines.append("```")
         lines.append("")
 

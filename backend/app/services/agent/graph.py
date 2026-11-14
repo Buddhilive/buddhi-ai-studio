@@ -15,6 +15,8 @@ from app.services.agent.egm.nodes import (
 from app.services.agent.nodes import (
     act_node,
     analyze_node,
+    harness_calibrate_node,
+    harness_distill_node,
     observe_node,
     plan_node,
     review_node,
@@ -24,6 +26,7 @@ from app.services.agent.routing import (
     route_after_act,
     route_after_analyze,
     route_after_goldfish_verify,
+    route_after_harness_calibrate,
     route_after_observe,
     route_after_resolve,
     route_after_review,
@@ -51,6 +54,10 @@ def build_agent_graph(checkpointer: Any | None = None, interrupt_before: list[st
     builder.add_node("review", _wrap_node(review_node))
     builder.add_node("rlm_run", _wrap_node(rlm_run_node))
 
+    # Harness2 nodes
+    builder.add_node("harness_calibrate", _wrap_node(harness_calibrate_node))
+    builder.add_node("harness_distill", _wrap_node(harness_distill_node))
+
     # EGM nodes
     builder.add_node("brainstorm", _wrap_node(brainstorm_node))
     builder.add_node("draft", _wrap_node(draft_node))
@@ -72,9 +79,23 @@ def build_agent_graph(checkpointer: Any | None = None, interrupt_before: list[st
             "draft": "draft",
             "brainstorm": "brainstorm",
             "drift_report": "drift_report",
+            "harness_calibrate": "harness_calibrate",
             "end": END,
         },
     )
+
+    builder.add_conditional_edges(
+        "harness_calibrate",
+        route_after_harness_calibrate,
+        {
+            "plan": "plan",
+            "draft": "draft",
+            "brainstorm": "brainstorm",
+            "rlm_run": "rlm_run",
+            "end": END,
+        },
+    )
+    builder.add_edge("harness_distill", END)
 
     builder.add_edge("rlm_run", END)
     builder.add_edge("drift_report", END)
@@ -105,13 +126,13 @@ def build_agent_graph(checkpointer: Any | None = None, interrupt_before: list[st
     builder.add_conditional_edges(
         "review",
         route_after_review,
-        {"plan": "plan", "act": "act", "end": END},
+        {"plan": "plan", "act": "act", "harness_calibrate": "harness_calibrate", "harness_distill": "harness_distill", "end": END},
     )
 
     builder.add_conditional_edges(
         "goldfish_verify",
         route_after_goldfish_verify,
-        {"plan": "plan", "act": "act", "end": END},
+        {"plan": "plan", "act": "act", "harness_calibrate": "harness_calibrate", "harness_distill": "harness_distill", "end": END},
     )
 
     return builder.compile(checkpointer=checkpointer, interrupt_before=interrupt_before)

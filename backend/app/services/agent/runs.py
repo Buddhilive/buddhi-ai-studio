@@ -75,6 +75,12 @@ class AgentRunManager:
             from app.core.settings_store import get_egm_settings
             is_egm = bool(get_egm_settings().get("enabled", False))
 
+        from app.core.settings_store import get_harness_settings
+        harness_conf = get_harness_settings()
+        harness_mode = request.harness_mode
+        if harness_mode is None:
+            harness_mode = "auto" if harness_conf.get("enabled", True) else "off"
+
         initial_state: AgentState = {
             "run_id": run_id,
             "messages": request.messages,
@@ -102,6 +108,14 @@ class AgentRunManager:
             "egm_artifacts": {},
             "concepts_brief": None,
             "drift_report": None,
+            "workspace_id": request.workspace_id or "default",
+            "harness_mode": harness_mode,
+            "harness_overlay": None,
+            "harness_experiences": [],
+            "harness_calibration_rounds": 0,
+            "harness_max_calibration_rounds": int(harness_conf.get("max_calibration_rounds", 1)),
+            "harness_last_failure_sig": None,
+            "harness_report": None,
         }
 
         await emitter.emit_run_start({

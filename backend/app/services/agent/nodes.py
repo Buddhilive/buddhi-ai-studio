@@ -9,6 +9,8 @@ from app.core.config import settings
 from app.core.tool_parser import extract_tool_calls
 from app.schemas.agent import PlanStep
 from app.services.agent.events import AgentEventEmitter
+from app.services.agent.harness.storage import harness_storage_service
+from app.services.agent.harness.validator import validate_workspace_id
 from app.services.agent.prompts import (
     build_act_messages,
     build_analyze_messages,
@@ -91,8 +93,26 @@ async def analyze_node(state: AgentState, emitter: AgentEventEmitter | None = No
     if emitter:
         await emitter.emit_node_start("analyze")
 
+    # Zero-cost Level 2 Harness2 overlay + EXPERIENCE load
+    harness_mode = state.get("harness_mode") or "auto"
+    workspace_id = state.get("workspace_id") or "default"
+    harness_overlay = state.get("harness_overlay")
+    harness_experiences = state.get("harness_experiences") or []
+    if harness_mode != "off" and validate_workspace_id(workspace_id):
+        if harness_overlay is None:
+            loaded_overlay = await harness_storage_service.aget_active_overlay(workspace_id)
+            if loaded_overlay is not None:
+                harness_overlay = loaded_overlay.model_dump(mode="json")
+        if not harness_experiences:
+            loaded_exps = await harness_storage_service.aget_active_experiences(workspace_id)
+            harness_experiences = [e.model_dump(mode="json") for e in loaded_exps]
+
     model_id = state.get("model", settings.agent_default_model) if "model" in state else settings.agent_default_model
-    messages = build_analyze_messages(state.get("messages", []))
+    messages = build_analyze_messages(
+        state.get("messages", []),
+        harness_overlay=harness_overlay,
+        harness_experiences=harness_experiences,
+    )
 
     text, _ = await generate_with_streaming(messages, model_id, "analyze", emitter)
 
@@ -125,6 +145,8 @@ async def analyze_node(state: AgentState, emitter: AgentEventEmitter | None = No
         "step": step,
         "status": "running",
         "is_rlm_mode": is_rlm_mode,
+        "harness_overlay": harness_overlay,
+        "harness_experiences": harness_experiences,
     }
 
 
@@ -133,7 +155,12 @@ async def plan_node(state: AgentState, emitter: AgentEventEmitter | None = None)
         await emitter.emit_node_start("plan")
 
     model_id = state.get("model", settings.agent_default_model) if "model" in state else settings.agent_default_model
-    messages = build_plan_messages(state.get("messages", []), analysis="")
+    messages = build_plan_messages(
+        state.get("messages", []),
+        analysis="",
+        harness_overlay=state.get("harness_overlay"),
+        harness_experiences=state.get("harness_experiences"),
+    )
 
     text, _ = await generate_with_streaming(messages, model_id, "plan", emitter)
     plan_steps = parse_plan_text(text)
@@ -157,6 +184,8 @@ async def act_node(state: AgentState, emitter: AgentEventEmitter | None = None) 
         state.get("messages", []),
         state.get("plan", []),
         state.get("observations", []),
+        harness_overlay=state.get("harness_overlay"),
+        harness_experiences=state.get("harness_experiences"),
     )
 
     text, _ = await generate_with_streaming(
@@ -296,7 +325,10 @@ async def rlm_run_node(state: AgentState, emitter: AgentEventEmitter | None = No
         task_prompt = " ".join(str(p) for p in task_prompt)
 
     runner = RlmTaskRunner()
-    result = await runner.run(task_prompt=str(task_prompt))
+    result = await runner.run(
+        task_prompt=str(task_prompt),
+        harness_overlay=state.get("harness_overlay"),
+    )
 
     if emitter:
         await emitter.emit_text_delta("rlm_run", result.final_answer)
@@ -312,3 +344,180 @@ async def rlm_run_node(state: AgentState, emitter: AgentEventEmitter | None = No
         "rlm_telemetry": asdict(result.telemetry),
         "is_rlm_mode": True,
     }
+
+
+async def harness_calibrate_node(state: AgentState, emitter: AgentEventEmitter | None = None) -> dict[str, Any]:
+    """Level 1 Propose -> Probe -> Compose calibration node."""
+    if emitter:
+        await emitter.emit_node_start("harness_calibrate")
+
+    import uuid
+    from app.services.agent.harness.calibrator import compute_failure_signature, harness_calibrator
+    from app.services.agent.harness.models import HarnessOverlay
+
+    workspace_id = state.get("workspace_id") or "default"
+    run_id = state.get("run_id") or f"run_{uuid.uuid4().hex[:8]}"
+    round_num = int(state.get("harness_calibration_rounds") or 0) + 1
+    model_id = state.get("model", settings.agent_default_model) if "model" in state else settings.agent_default_model
+
+    user_messages = [m for m in state.get("messages", []) if getattr(m, "role", "") == "user"]
+    task_prompt = str(user_messages[-1].content) if user_messages else "Complete coding task"
+    observations = state.get("observations") or []
+    failure_sig = compute_failure_signature(observations, state.get("error"))
+    trigger_reason = (
+        "explicit_opt_in"
+        if state.get("harness_mode") == "calibrate" and round_num == 1
+        else ("goldfish_verify_retry" if state.get("is_egm_mode") else "retry_or_uncalibrated")
+    )
+
+    raw_overlay = state.get("harness_overlay")
+    baseline_overlay = HarnessOverlay.model_validate(raw_overlay) if raw_overlay else None
+    harness_conf = settings_store.get_harness_settings()
+    max_candidates = int(harness_conf.get("max_candidates", settings.harness_max_candidates))
+    concurrency = int(harness_conf.get("probe_concurrency", settings.harness_probe_concurrency))
+    probe_max_steps = int(harness_conf.get("probe_max_steps", settings.harness_probe_max_steps))
+    probe_timeout_s = int(harness_conf.get("probe_timeout_s", settings.harness_probe_timeout_s))
+
+    calibration_id = f"cal_{uuid.uuid4().hex[:10]}"
+    diffs, rejected_static, rlm_used = await harness_calibrator.propose(
+        workspace_id=workspace_id,
+        task_prompt=task_prompt,
+        observations=observations,
+        baseline_overlay=baseline_overlay,
+        max_candidates=max_candidates,
+        model_id=model_id,
+    )
+    if emitter:
+        await emitter.emit_harness_propose(
+            round_num=round_num,
+            trigger_reason=trigger_reason,
+            rlm_used=rlm_used,
+            candidate_count=len(diffs),
+            rejected_static=rejected_static,
+        )
+
+    if not diffs:
+        report_dict = {
+            "calibration_id": calibration_id,
+            "workspace_id": workspace_id,
+            "run_id": run_id,
+            "round": round_num,
+            "trigger_reason": trigger_reason,
+            "status": "no_improvement",
+            "adopted_components": [],
+            "rlm_used": rlm_used,
+        }
+        if emitter:
+            await emitter.emit_harness_compose(round_num, "no_improvement", None, [], {"propose": "no_valid_candidates"})
+            await emitter.emit_node_end("harness_calibrate", {"status": "no_improvement"})
+        return {
+            "harness_calibration_rounds": round_num,
+            "harness_last_failure_sig": failure_sig,
+            "harness_report": report_dict,
+        }
+
+    probe_results, candidate_overlays = await harness_calibrator.probe(
+        workspace_id=workspace_id,
+        calibration_id=calibration_id,
+        diffs=diffs,
+        baseline_overlay=baseline_overlay,
+        task_prompt=task_prompt,
+        run_id=run_id,
+        concurrency=concurrency,
+        max_steps=probe_max_steps,
+        timeout_s=probe_timeout_s,
+        model_id=model_id,
+    )
+    if emitter:
+        for p in probe_results:
+            await emitter.emit_harness_probe(
+                round_num=round_num,
+                candidate_id=p.candidate_id,
+                status=p.status,
+                steps_taken=p.steps_taken,
+                tool_error_count=p.tool_error_count,
+                test_pass_rate=p.test_pass_rate,
+                wall_clock_ms=p.wall_clock_ms,
+                guardrail_violations=p.guardrail_violations,
+            )
+
+    total_obs = len(observations)
+    ok_obs = sum(1 for o in observations if o.get("status") == "completed" and o.get("exit_code", 0) == 0)
+    baseline_score = (ok_obs / total_obs) if total_obs > 0 else 0.0
+
+    report, adopted_overlay = await harness_calibrator.compose(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        calibration_id=calibration_id,
+        round_num=round_num,
+        trigger_reason=trigger_reason,
+        task_prompt=task_prompt,
+        baseline_overlay=baseline_overlay,
+        baseline_score=baseline_score,
+        diffs=diffs,
+        probe_results=probe_results,
+        candidate_overlays=candidate_overlays,
+        rlm_used=rlm_used,
+        model_id=model_id,
+    )
+    if emitter:
+        await emitter.emit_harness_compose(
+            round_num=round_num,
+            status=report.status,
+            winning_candidate_id=report.winning_candidate_id,
+            adopted_components=report.adopted_components,
+            rejected_reasons=report.rejected_reasons,
+        )
+        await emitter.emit_node_end("harness_calibrate", {"status": report.status, "adopted": report.adopted_components})
+
+    updates: dict[str, Any] = {
+        "harness_calibration_rounds": round_num,
+        "harness_last_failure_sig": failure_sig,
+        "harness_report": report.model_dump(mode="json"),
+    }
+    if adopted_overlay is not None:
+        updates["harness_overlay"] = adopted_overlay.model_dump(mode="json")
+    if state.get("is_egm_mode"):
+        artifacts = dict(state.get("egm_artifacts") or {})
+        artifacts["harness_calibration_report"] = report.model_dump_json(indent=2)
+        updates["egm_artifacts"] = artifacts
+    return updates
+
+
+async def harness_distill_node(state: AgentState, emitter: AgentEventEmitter | None = None) -> dict[str, Any]:
+    """Level 2 cross-task EXPERIENCE distillation node on verified pass."""
+    if emitter:
+        await emitter.emit_node_start("harness_distill")
+
+    from app.services.agent.harness.calibrator import harness_calibrator
+
+    report = state.get("harness_report") or {}
+    adopted_components = report.get("adopted_components") or []
+    if report.get("status") != "adopted" or not adopted_components:
+        if emitter:
+            await emitter.emit_node_end("harness_distill", {"skipped": True})
+        return {}
+
+    workspace_id = state.get("workspace_id") or "default"
+    run_id = state.get("run_id") or "run_unknown"
+    model_id = state.get("model", settings.agent_default_model) if "model" in state else settings.agent_default_model
+    user_messages = [m for m in state.get("messages", []) if getattr(m, "role", "") == "user"]
+    task_prompt = str(user_messages[-1].content) if user_messages else "Completed coding task"
+
+    entry = await harness_calibrator.distill(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        task_prompt=task_prompt,
+        adopted_components=adopted_components,
+        observations=state.get("observations") or [],
+        model_id=model_id,
+    )
+    if emitter:
+        await emitter.emit_harness_distill(
+            entry_id=entry.entry_id,
+            workspace_id=workspace_id,
+            components_affected=entry.components_affected,
+            lesson=entry.lesson,
+        )
+        await emitter.emit_node_end("harness_distill", {"entry_id": entry.entry_id})
+    return {}

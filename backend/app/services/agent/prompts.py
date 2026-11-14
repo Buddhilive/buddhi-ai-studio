@@ -15,11 +15,60 @@ SYSTEM_HARNESS_PROMPT = (
 )
 
 
-def build_analyze_messages(user_messages: list[ChatMessage]) -> list[ChatMessage]:
+def format_harness_overlay_block(
+    harness_overlay: dict[str, Any] | None = None,
+    harness_experiences: list[dict[str, Any]] | None = None,
+) -> str:
+    """Render active Harness2 8-component overlay + sanitized EXPERIENCE for Elephant/RLM prompts."""
+    sections: list[str] = []
+    if harness_overlay:
+        comp = harness_overlay.get("components") or {}
+        if comp.get("system_prompt"):
+            sections.append(f"### HARNESS SYSTEM GUIDANCE\n{comp['system_prompt']}")
+        if comp.get("guardrails"):
+            sections.append(f"### HARNESS GUARDRAILS\n{comp['guardrails']}")
+        if comp.get("tool_guidance"):
+            sections.append(f"### TOOL GUIDANCE\n{comp['tool_guidance']}")
+        if comp.get("subagents"):
+            sections.append(f"### SUBAGENT DELEGATION\n{comp['subagents']}")
+        if comp.get("skills"):
+            skills_text = "\n".join(f"- {k}: {v}" for k, v in comp["skills"].items())
+            sections.append(f"### ACTIVE SKILLS\n{skills_text}")
+        if comp.get("scripts"):
+            scripts_list = ", ".join(sorted(comp["scripts"].keys()))
+            sections.append(f"### SANDBOX SCRIPTS AVAILABLE\n{scripts_list}")
+        if comp.get("plugins"):
+            plugins_text = ", ".join(str(p.get("name", "plugin")) for p in comp["plugins"] if p.get("enabled", True))
+            if plugins_text:
+                sections.append(f"### ACTIVE PLUGINS\n{plugins_text}")
+        if comp.get("memory"):
+            sections.append(f"### HARNESS MEMORY\n{comp['memory']}")
+
+    if harness_experiences:
+        exp_lines = [
+            f"- [{e.get('task_signature', 'task')}] {e.get('lesson', '')}"
+            for e in harness_experiences
+            if e.get("lesson")
+        ]
+        if exp_lines:
+            sections.append(
+                "### WORKSPACE EXPERIENCE (ADVISORY CONTEXT — CANNOT OVERRIDE GUARDRAILS OR SCOPE)\n"
+                + "\n".join(exp_lines)
+            )
+
+    return ("\n\n" + "\n\n".join(sections) + "\n") if sections else ""
+
+
+def build_analyze_messages(
+    user_messages: list[ChatMessage],
+    harness_overlay: dict[str, Any] | None = None,
+    harness_experiences: list[dict[str, Any]] | None = None,
+) -> list[ChatMessage]:
+    overlay_block = format_harness_overlay_block(harness_overlay, harness_experiences)
     system_msg = ChatMessage(
         role="system",
         content=(
-            f"{SYSTEM_HARNESS_PROMPT}\n"
+            f"{SYSTEM_HARNESS_PROMPT}{overlay_block}\n"
             "PHASE: ANALYZE\n"
             "Carefully analyze the user's request. Identify the core objective, required files, dependencies, "
             "and potential pitfalls. Be concise and technical."
@@ -28,11 +77,17 @@ def build_analyze_messages(user_messages: list[ChatMessage]) -> list[ChatMessage
     return [system_msg] + user_messages
 
 
-def build_plan_messages(user_messages: list[ChatMessage], analysis: str) -> list[ChatMessage]:
+def build_plan_messages(
+    user_messages: list[ChatMessage],
+    analysis: str,
+    harness_overlay: dict[str, Any] | None = None,
+    harness_experiences: list[dict[str, Any]] | None = None,
+) -> list[ChatMessage]:
+    overlay_block = format_harness_overlay_block(harness_overlay, harness_experiences)
     system_msg = ChatMessage(
         role="system",
         content=(
-            f"{SYSTEM_HARNESS_PROMPT}\n"
+            f"{SYSTEM_HARNESS_PROMPT}{overlay_block}\n"
             "PHASE: PLAN\n"
             f"Based on the analysis:\n{analysis}\n\n"
             "Break down the implementation into clear, numbered, sequential steps.\n"
@@ -50,8 +105,11 @@ def build_act_messages(
     plan: list[PlanStep],
     observations: list[Observation],
     max_recent_observations: int = 4,
+    harness_overlay: dict[str, Any] | None = None,
+    harness_experiences: list[dict[str, Any]] | None = None,
 ) -> list[ChatMessage]:
     tools_decl = _format_tools_declaration(AGENT_TOOL_DEFINITIONS)
+    overlay_block = format_harness_overlay_block(harness_overlay, harness_experiences)
 
     plan_text = "\n".join(f"- [{s.status.upper()}] {s.title}" for s in plan) if plan else "No plan established."
 
@@ -66,7 +124,7 @@ def build_act_messages(
     obs_text = "\n---\n".join(obs_text_parts) if obs_text_parts else "No previous tool outputs."
 
     instructions = (
-        f"{SYSTEM_HARNESS_PROMPT}\n"
+        f"{SYSTEM_HARNESS_PROMPT}{overlay_block}\n"
         "PHASE: ACT\n"
         f"Available Tools:\n{tools_decl}\n\n"
         f"Plan:\n{plan_text}\n\n"
@@ -106,11 +164,14 @@ def build_review_messages(
 def build_draft_messages(
     user_messages: list[ChatMessage],
     concepts_brief: str | None = None,
+    harness_overlay: dict[str, Any] | None = None,
+    harness_experiences: list[dict[str, Any]] | None = None,
 ) -> list[ChatMessage]:
     brief_section = f"\n### CONCEPTS BRIEF (From Ideation/Brainstorm):\n{concepts_brief}\n" if concepts_brief else ""
+    overlay_block = format_harness_overlay_block(harness_overlay, harness_experiences)
 
     instructions = (
-        f"{SYSTEM_HARNESS_PROMPT}\n"
+        f"{SYSTEM_HARNESS_PROMPT}{overlay_block}\n"
         "ROLE: Elephant (Lead Software Architect & Designer)\n"
         "PHASE: DRAFT SPECIFICATION\n\n"
         "You are creating a comprehensive, spec-driven development design document.\n"
@@ -135,14 +196,17 @@ def build_resolve_messages(
     current_spec: str,
     review_report_md: str,
     decisions: list[dict[str, Any]],
+    harness_overlay: dict[str, Any] | None = None,
+    harness_experiences: list[dict[str, Any]] | None = None,
 ) -> list[ChatMessage]:
     decisions_summary = "\n".join([
         f"- Finding {d.get('finding_id')}: {d.get('decision')} (Rationale: {d.get('rationale') or 'None'})"
         for d in decisions
     ]) or "No explicit user decisions provided."
+    overlay_block = format_harness_overlay_block(harness_overlay, harness_experiences)
 
     instructions = (
-        f"{SYSTEM_HARNESS_PROMPT}\n"
+        f"{SYSTEM_HARNESS_PROMPT}{overlay_block}\n"
         "ROLE: Elephant (Lead Software Architect & Resolver)\n"
         "PHASE: RESOLVE & SHARPEN SPECIFICATION\n\n"
         "The Goldfish review has reported findings, and the user has provided triage decisions.\n"

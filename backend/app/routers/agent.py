@@ -134,3 +134,75 @@ async def get_agent_artifacts(run_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch artifacts for {run_id}: {str(exc)}",
         )
+
+
+@router.get("/harness/{workspace_id}")
+async def get_harness_state(workspace_id: str):
+    from app.services.agent.harness.storage import harness_storage_service
+    from app.services.agent.harness.validator import validate_workspace_id
+
+    if not validate_workspace_id(workspace_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid workspace_id")
+
+    active = harness_storage_service.get_active_overlay(workspace_id)
+    history = harness_storage_service.list_overlay_history(workspace_id, limit=20)
+    experiences = harness_storage_service.get_active_experiences(workspace_id, limit=50)
+    return {
+        "workspace_id": workspace_id,
+        "active_overlay": active.model_dump(mode="json") if active else None,
+        "history": [h.model_dump(mode="json") for h in history],
+        "experiences": [e.model_dump(mode="json") for e in experiences],
+    }
+
+
+@router.post("/harness/{workspace_id}/rollback")
+async def rollback_harness_overlay(workspace_id: str, body: dict):
+    from app.services.agent.harness.storage import harness_storage_service
+    from app.services.agent.harness.validator import validate_workspace_id
+
+    version_id = str((body or {}).get("version_id") or "")
+    if not validate_workspace_id(workspace_id) or not validate_workspace_id(version_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid workspace_id or version_id")
+    try:
+        restored = harness_storage_service.rollback_overlay(workspace_id, version_id)
+        return {"workspace_id": workspace_id, "active_overlay": restored.model_dump(mode="json")}
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+
+@router.post("/harness/{workspace_id}/reset")
+async def reset_harness_overlay(workspace_id: str):
+    from app.services.agent.harness.storage import harness_storage_service
+    from app.services.agent.harness.validator import validate_workspace_id
+
+    if not validate_workspace_id(workspace_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid workspace_id")
+    harness_storage_service.reset_workspace(workspace_id)
+    return {"workspace_id": workspace_id, "status": "reset"}
+
+
+@router.patch("/harness/{workspace_id}/experience/{entry_id}")
+async def pin_harness_experience(workspace_id: str, entry_id: str, body: dict):
+    from app.services.agent.harness.storage import harness_storage_service
+    from app.services.agent.harness.validator import validate_workspace_id
+
+    if not validate_workspace_id(workspace_id) or not validate_workspace_id(entry_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid workspace_id or entry_id")
+    pinned = bool((body or {}).get("pinned", True))
+    ok = harness_storage_service.set_experience_pin(workspace_id, entry_id, pinned)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Experience {entry_id} not found")
+    return {"workspace_id": workspace_id, "entry_id": entry_id, "is_pinned": pinned}
+
+
+@router.delete("/harness/{workspace_id}/experience/{entry_id}")
+async def delete_harness_experience(workspace_id: str, entry_id: str):
+    from app.services.agent.harness.storage import harness_storage_service
+    from app.services.agent.harness.validator import validate_workspace_id
+
+    if not validate_workspace_id(workspace_id) or not validate_workspace_id(entry_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid workspace_id or entry_id")
+    ok = harness_storage_service.delete_experience(workspace_id, entry_id)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Experience {entry_id} not found")
+    return {"workspace_id": workspace_id, "entry_id": entry_id, "deleted": True}

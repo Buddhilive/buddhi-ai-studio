@@ -11,6 +11,7 @@ _LITERT_BACKEND_KEY = "litert_backend"
 _CHAT_MAX_NUM_TOKENS_KEY = "chat_max_num_tokens"
 _RLM_SETTINGS_KEY = "rlm_settings"
 _EGM_SETTINGS_KEY = "egm_settings"
+_HARNESS_SETTINGS_KEY = "harness_settings"
 
 
 def _connect() -> sqlite3.Connection:
@@ -139,4 +140,38 @@ def set_egm_settings(data: dict) -> None:
             "INSERT INTO app_settings (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (_EGM_SETTINGS_KEY, json.dumps(data)),
+        )
+
+
+def get_harness_settings() -> dict:
+    import json
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?", (_HARNESS_SETTINGS_KEY,)
+        ).fetchone()
+    if row and row[0]:
+        try:
+            return json.loads(row[0])
+        except Exception:
+            pass
+    return {
+        "enabled": settings.harness_enabled_default,
+        "auto_calibrate_uncalibrated": settings.harness_auto_calibrate_uncalibrated,
+        "auto_calibrate_on_retry": settings.harness_auto_calibrate_on_retry,
+        "max_calibration_rounds": settings.harness_max_calibration_rounds,
+        "max_candidates": settings.harness_max_candidates,
+        "probe_concurrency": settings.harness_probe_concurrency,
+        "probe_max_steps": settings.harness_probe_max_steps,
+        "probe_timeout_s": settings.harness_probe_timeout_s,
+        "experience_max_entries": settings.harness_max_experiences_per_workspace,
+    }
+
+
+def set_harness_settings(data: dict) -> None:
+    import json
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (_HARNESS_SETTINGS_KEY, json.dumps(data)),
         )

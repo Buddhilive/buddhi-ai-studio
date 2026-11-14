@@ -248,12 +248,21 @@ async def execute_tool(
             except ValueError as ve:
                 return "error", f"EGM Path Validation Error: {str(ve)}", 1, False
 
+            # Harness2 Protection: never allow agent writes to .buddhi/harness/
+            if norm_path == ".buddhi/harness" or norm_path.startswith(".buddhi/harness/"):
+                return (
+                    "error",
+                    f"Harness2 Guardrail Violation: '.buddhi/harness/' is immutable to agent tools. Attempted write to '{norm_path}'.",
+                    1,
+                    False,
+                )
+
             # EGM Write Boundary Enforcement
             if ctx.is_egm_mode:
                 if not ctx.spec_approved:
                     # Phases 1-4: strictly restrict writes to .buddhi/specs/
                     allowed_prefix = f".buddhi/specs/{ctx.run_id}" if ctx.run_id else ".buddhi/specs"
-                    if not (norm_path.startswith(allowed_prefix) or norm_path.startswith(".buddhi/specs/")):
+                    if not (norm_path == allowed_prefix or norm_path.startswith(f"{allowed_prefix}/") or norm_path.startswith(".buddhi/specs/")):
                         return (
                             "error",
                             f"EGM Guardrail Violation: Phases 1-4 restrict writes strictly to '.buddhi/specs/'. Attempted write to '{norm_path}'.",
@@ -261,14 +270,17 @@ async def execute_tool(
                             False,
                         )
                 else:
-                    # Phase 5: enforce Target Scope & File Boundary
-                    allowed = set(ctx.target_scope_files) | set(ctx.allowed_write_paths)
-                    # Also permit writing to specs directory during implementation if needed
-                    is_in_scope = norm_path in allowed or any(norm_path.startswith(p) for p in allowed) or norm_path.startswith(".buddhi/specs/")
+                    # Phase 5: enforce Target Scope & File Boundary (exact match or normalized directory prefix)
+                    allowed = {p.rstrip("/") for p in (set(ctx.target_scope_files) | set(ctx.allowed_write_paths)) if p}
+                    is_in_scope = (
+                        norm_path in allowed
+                        or any(norm_path.startswith(f"{p}/") for p in allowed)
+                        or norm_path.startswith(".buddhi/specs/")
+                    )
                     if not is_in_scope:
                         return (
                             "error",
-                            f"EGM Boundary Violation: Path '{norm_path}' is outside approved Target Scope & File Boundary: {list(allowed)}",
+                            f"EGM Boundary Violation: Path '{norm_path}' is outside approved Target Scope & File Boundary: {sorted(allowed)}",
                             1,
                             False,
                         )

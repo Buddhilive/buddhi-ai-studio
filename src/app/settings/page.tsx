@@ -27,6 +27,12 @@ import { toast } from "sonner";
 import { EngineReloadDialog } from "@/components/settings/engine-reload-dialog";
 import { RlmConfig, RlmSettings } from "@/components/settings/rlm-settings";
 import { EgmConfig, EgmSettings } from "@/components/settings/egm-settings";
+import { HarnessSettings } from "@/components/settings/harness-settings";
+import type {
+  ExperienceEntry,
+  HarnessOverlay,
+  HarnessSettings as HarnessSettingsConfig,
+} from "@/lib/agent-events";
 
 interface SupportedBackend {
   id: string;
@@ -72,18 +78,26 @@ export default function SettingsPage() {
   // EGM Settings state
   const [egmConfig, setEgmConfig] = useState<EgmConfig | null>(null);
 
+  // Harness2 Settings & Governance state
+  const [harnessConfig, setHarnessConfig] = useState<HarnessSettingsConfig | null>(null);
+  const [harnessOverlay, setHarnessOverlay] = useState<HarnessOverlay | null>(null);
+  const [harnessHistory, setHarnessHistory] = useState<HarnessOverlay[]>([]);
+  const [harnessExperiences, setHarnessExperiences] = useState<ExperienceEntry[]>([]);
+
   // System Resource Recommendation state
   const [systemResources, setSystemResources] = useState<SystemResources | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshAll = useCallback(async () => {
     try {
-      const [hfRes, infRes, resRes, rlmRes, egmRes] = await Promise.all([
+      const [hfRes, infRes, resRes, rlmRes, egmRes, harnessSetRes, harnessStateRes] = await Promise.all([
         fetch("/api/settings/hf-token"),
         fetch("/api/settings/inference"),
         fetch("/api/settings/system-resources"),
         fetch("/api/settings/rlm"),
         fetch("/api/settings/egm"),
+        fetch("/api/settings/harness"),
+        fetch("/api/harness/overlay?workspaceId=default"),
       ]);
 
       if (hfRes.ok) {
@@ -113,6 +127,17 @@ export default function SettingsPage() {
       if (egmRes.ok) {
         const egmData = await egmRes.json();
         setEgmConfig(egmData);
+      }
+
+      if (harnessSetRes.ok) {
+        setHarnessConfig(await harnessSetRes.json());
+      }
+
+      if (harnessStateRes.ok) {
+        const hData = await harnessStateRes.json();
+        setHarnessOverlay(hData.active_overlay ?? null);
+        setHarnessHistory(hData.history ?? []);
+        setHarnessExperiences(hData.experiences ?? []);
       }
     } catch (err) {
       console.error("[settings] failed to load settings:", err);
@@ -445,6 +470,18 @@ export default function SettingsPage() {
             }
           }}
           disabled={isLoading || isSavingInference}
+        />
+      )}
+
+      {/* Harness2 Recursive Scaffolding Settings Card */}
+      {!isLoading && harnessConfig && (
+        <HarnessSettings
+          config={harnessConfig}
+          overlay={harnessOverlay}
+          history={harnessHistory}
+          experiences={harnessExperiences}
+          onConfigUpdated={setHarnessConfig}
+          onRefresh={refreshAll}
         />
       )}
 

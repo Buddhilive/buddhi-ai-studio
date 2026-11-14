@@ -6,6 +6,7 @@ import { ToolCard } from "@/components/ai-elements/tool";
 import { Plan } from "@/components/ai-elements/plan";
 import { EgmPhaseBadge } from "@/components/ai-elements/egm-phase-badge";
 import { EgmReviewPanel } from "@/components/ai-elements/egm-review-panel";
+import { HarnessCalibrationCard } from "@/components/ai-elements/harness-calibration-card";
 import type { PlanStep, EgmReviewReport } from "@/lib/agent-events";
 
 interface AgentPartProps {
@@ -55,6 +56,12 @@ export function AgentMessagePart({ part }: AgentPartProps) {
         />
       );
     }
+  }
+
+  // Handle Harness2 calibration / probe / compose / distill parts
+  if (part.type === "data-harness-status" && part.data && typeof part.data === "object") {
+    const data = part.data as Record<string, unknown>;
+    return <HarnessCalibrationCard event={String(data.event ?? "harness.propose")} data={data} />;
   }
 
   // Handle Tool call / result parts

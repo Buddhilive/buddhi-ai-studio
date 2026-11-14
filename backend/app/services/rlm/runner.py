@@ -66,6 +66,7 @@ class RlmTaskRunner:
         task_prompt: str,
         max_steps: int = 8,
         repo_mount_path: str | None = None,
+        harness_overlay: dict[str, Any] | None = None,
     ) -> RlmExecutionResult:
         """Executes an RLM task inside an ephemeral OpenSandbox session."""
         rlm_conf = settings_store.get_rlm_settings()
@@ -77,7 +78,12 @@ class RlmTaskRunner:
 
         root_gen = self.generate_fn or self._default_root_generate
 
-        session: RlmSession = await self.session_mgr.create_session(repo_mount_path=repo_mount_path)
+        comp = (harness_overlay or {}).get("components") or {}
+        harness_scripts = comp.get("scripts") if isinstance(comp.get("scripts"), dict) else None
+        session: RlmSession = await self.session_mgr.create_session(
+            repo_mount_path=repo_mount_path,
+            harness_scripts=harness_scripts,
+        )
         stop_event = asyncio.Event()
         poll_task = asyncio.create_task(
             self.bridge.poll_and_serve_session(
@@ -88,8 +94,10 @@ class RlmTaskRunner:
             )
         )
 
+        from app.services.agent.prompts import format_harness_overlay_block
+        overlay_block = format_harness_overlay_block(harness_overlay)
         history: list[ChatMessage] = [
-            ChatMessage(role="system", content=RLM_ROOT_SYSTEM_PROMPT),
+            ChatMessage(role="system", content=f"{RLM_ROOT_SYSTEM_PROMPT}{overlay_block}"),
             ChatMessage(role="user", content=f"Objective: {task_prompt}\nWrite Python code to explore and analyze."),
         ]
 

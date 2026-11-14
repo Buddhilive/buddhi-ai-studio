@@ -228,12 +228,38 @@ class SandboxService:
 
     # Session Management
     async def create_session(self, request: SandboxSessionCreateRequest) -> SandboxSessionResponse:
+        async with self._lock:
+            if len(self._active_sessions) >= settings.sandbox_max_active_sessions:
+                raise RuntimeError(
+                    f"Active sandbox session limit reached ({settings.sandbox_max_active_sessions})."
+                )
+
         conn_config = self._get_connection_config()
-        sandbox = await Sandbox.create(
-            image=request.runtime_image,
-            timeout=timedelta(seconds=request.timeout_s),
-            connection_config=conn_config,
-        )
+        create_kwargs: dict[str, Any] = {
+            "image": request.runtime_image,
+            "timeout": timedelta(seconds=request.timeout_s),
+            "connection_config": conn_config,
+        }
+        # Forward resource & network isolation limits when supported by SDK
+        resource_limits: dict[str, str] = {}
+        if getattr(request, "memory_limit_mb", None):
+            resource_limits["memory"] = f"{int(request.memory_limit_mb)}Mi"
+        if getattr(request, "cpu_limit", None):
+            resource_limits["cpu"] = str(request.cpu_limit)
+        if resource_limits:
+            create_kwargs["resource"] = resource_limits
+        if not request.allow_network:
+            create_kwargs["network_policy"] = {"defaultAction": "deny"}
+
+        try:
+            sandbox = await Sandbox.create(**create_kwargs)
+        except TypeError:
+            # Fallback if installed opensandbox SDK version does not accept resource/network_policy kwargs
+            sandbox = await Sandbox.create(
+                image=request.runtime_image,
+                timeout=timedelta(seconds=request.timeout_s),
+                connection_config=conn_config,
+            )
         session_id = sandbox.id
         now = datetime.now(timezone.utc)
         session = ActiveSession(

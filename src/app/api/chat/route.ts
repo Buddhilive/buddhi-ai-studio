@@ -14,11 +14,13 @@ export async function POST(req: Request) {
     model,
     enableThinking = true,
     egmMode = false,
+    harnessCalibrate = false,
   }: {
     messages: UIMessage[];
     model: string;
     enableThinking?: boolean;
     egmMode?: boolean;
+    harnessCalibrate?: boolean;
   } = await req.json();
 
   const selectedModel = model || "gemma-4-e4b";
@@ -44,6 +46,7 @@ export async function POST(req: Request) {
             model: selectedModel,
             enable_thinking: Boolean(enableThinking),
             egm_mode: Boolean(egmMode),
+            ...(harnessCalibrate ? { harness_mode: "calibrate" } : {}),
           }),
         });
 
@@ -175,6 +178,17 @@ export async function POST(req: Request) {
                   writer.write({
                     type: "data-egm-review",
                     data: { ...event.data, run_id: event.run_id },
+                  } as unknown as Parameters<typeof writer.write>[0]);
+                  break;
+                }
+
+                case "harness.propose":
+                case "harness.probe":
+                case "harness.compose":
+                case "harness.distill": {
+                  writer.write({
+                    type: "data-harness-status",
+                    data: { event: event.event, ...event.data },
                   } as unknown as Parameters<typeof writer.write>[0]);
                   break;
                 }
