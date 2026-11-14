@@ -97,13 +97,18 @@ class AgentRunRequest(BaseModel):
 
 AgentEventType = Literal[
     "run.start",
+    "turn.start",
+    "turn.end",
     "node.start",
     "node.end",
     "reasoning.delta",
     "text.delta",
     "plan.update",
     "tool.call",
+    "tool.args.delta",
+    "tool.output.delta",
     "tool.result",
+    "usage.update",
     "error",
     "run.end",
     "egm.phase",
@@ -120,6 +125,11 @@ AgentEventType = Literal[
 class AgentEvent(BaseModel):
     event: AgentEventType
     run_id: str
+    seq: int = 0
+    timestamp_ms: int = Field(default_factory=lambda: int(time.time() * 1000))
+    turn_id: str | None = None
+    span_id: str | None = None
+    parent_span_id: str | None = None
     node: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
     timestamp: float = Field(default_factory=time.time)

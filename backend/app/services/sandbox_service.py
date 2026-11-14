@@ -331,6 +331,159 @@ class SandboxService:
         session.touch()
         return await self._run_in_sandbox(session.sandbox, request)
 
+    async def execute_in_session_stream(
+        self,
+        session_id: str,
+        request: SandboxExecutionRequest,
+        on_chunk: Any = None,
+    ) -> SandboxExecutionResult:
+        session = await self.get_session(session_id)
+        if not session:
+            return SandboxExecutionResult(
+                status="error",
+                stdout="",
+                stderr=f"Session {session_id} not found or expired",
+                exit_code=1,
+                execution_time_ms=0.0,
+            )
+        session.touch()
+        return await self._run_in_sandbox_stream(session.sandbox, request, on_chunk=on_chunk)
+
+    async def _run_in_sandbox_stream(
+        self,
+        sandbox: Sandbox,
+        request: SandboxExecutionRequest,
+        on_chunk: Any = None,
+    ) -> SandboxExecutionResult:
+        if on_chunk is None:
+            return await self._run_in_sandbox(sandbox, request)
+
+        start_time = time.perf_counter()
+        if request.language == "python":
+            command = ["python", "-c", request.code]
+        elif request.language == "bash":
+            command = ["bash", "-c", request.code]
+        else:
+            command = ["sh", "-c", request.code]
+
+        opts = RunCommandOpts(
+            timeout=timedelta(seconds=request.timeout_s),
+            env=request.env_vars,  # type: ignore
+        )
+
+        chunk_chars = max(128, settings.sandbox_stream_chunk_chars)
+        flush_s = max(0.01, settings.sandbox_stream_flush_ms / 1000.0)
+        max_bytes = max(4096, settings.sandbox_max_output_bytes)
+
+        buffers: dict[str, list[str]] = {"stdout": [], "stderr": []}
+        buf_lens: dict[str, int] = {"stdout": 0, "stderr": 0}
+        last_flush: dict[str, float] = {"stdout": time.monotonic(), "stderr": time.monotonic()}
+        total_streamed_bytes = 0
+        cap_emitted = False
+        handler_saw_output = False
+
+        async def _flush_stream(stream_name: str) -> None:
+            if not buffers[stream_name]:
+                return
+            payload = "".join(buffers[stream_name])
+            buffers[stream_name].clear()
+            buf_lens[stream_name] = 0
+            last_flush[stream_name] = time.monotonic()
+            await on_chunk(stream_name, payload)
+
+        async def _push(stream_name: str, msg: Any) -> None:
+            nonlocal total_streamed_bytes, cap_emitted, handler_saw_output
+            text = getattr(msg, "text", None) if msg is not None else None
+            if text is None:
+                text = str(msg) if msg is not None else ""
+            if not text:
+                return
+            handler_saw_output = True
+            if cap_emitted:
+                return
+            b_len = len(text.encode("utf-8", errors="ignore"))
+            if total_streamed_bytes + b_len > max_bytes:
+                cap_emitted = True
+                await _flush_stream(stream_name)
+                await on_chunk(stream_name, "\n...[sandbox stream output capped at 1 MiB]\n")
+                return
+            total_streamed_bytes += b_len
+            buffers[stream_name].append(text)
+            buf_lens[stream_name] += len(text)
+            if buf_lens[stream_name] >= chunk_chars or (time.monotonic() - last_flush[stream_name]) >= flush_s:
+                await _flush_stream(stream_name)
+
+        async def _on_stdout(msg: Any) -> None:
+            await _push("stdout", msg)
+
+        async def _on_stderr(msg: Any) -> None:
+            await _push("stderr", msg)
+
+        handlers: Any = None
+        try:
+            from opensandbox.models.commands import ExecutionHandlers  # type: ignore
+
+            handlers = ExecutionHandlers(on_stdout=_on_stdout, on_stderr=_on_stderr)
+        except Exception:
+            from types import SimpleNamespace
+
+            handlers = SimpleNamespace(on_stdout=_on_stdout, on_stderr=_on_stderr)
+
+        try:
+            try:
+                exec_result = await asyncio.wait_for(
+                    sandbox.commands.run(command, opts=opts, handlers=handlers),
+                    timeout=request.timeout_s + 2.0,
+                )
+            except TypeError:
+                exec_result = await asyncio.wait_for(
+                    sandbox.commands.run(command, opts=opts),
+                    timeout=request.timeout_s + 2.0,
+                )
+        except asyncio.TimeoutError:
+            await _flush_stream("stdout")
+            await _flush_stream("stderr")
+            elapsed = (time.perf_counter() - start_time) * 1000
+            return SandboxExecutionResult(
+                status="timeout",
+                stdout="",
+                stderr=f"Execution timed out after {request.timeout_s}s",
+                exit_code=124,
+                execution_time_ms=elapsed,
+            )
+
+        await _flush_stream("stdout")
+        await _flush_stream("stderr")
+
+        elapsed = (time.perf_counter() - start_time) * 1000
+        stdout_parts: list[str] = []
+        stderr_parts: list[str] = []
+
+        if exec_result.logs and exec_result.logs.content:  # type: ignore
+            for msg in exec_result.logs.content:  # type: ignore
+                if getattr(msg, "is_error", False):
+                    stderr_parts.append(msg.text)
+                else:
+                    stdout_parts.append(msg.text)
+
+        if not handler_saw_output:
+            if stdout_parts:
+                await on_chunk("stdout", "".join(stdout_parts))
+            if stderr_parts:
+                await on_chunk("stderr", "".join(stderr_parts))
+
+        status_str = "completed" if (exec_result.exit_code == 0) else "error"
+        if exec_result.error:
+            stderr_parts.append(str(exec_result.error))
+
+        return SandboxExecutionResult(
+            status=status_str,
+            stdout="".join(stdout_parts),
+            stderr="".join(stderr_parts),
+            exit_code=exec_result.exit_code if exec_result.exit_code is not None else 0,
+            execution_time_ms=elapsed,
+        )
+
     async def write_session_file(self, session_id: str, path: str, content: str, is_base64: bool = False) -> bool:
         session = await self.get_session(session_id)
         if not session:

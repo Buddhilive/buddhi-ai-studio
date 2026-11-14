@@ -54,6 +54,27 @@ CREATE TABLE IF NOT EXISTS llm_events (
 )
 """
 
+_TRAJECTORY_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS trajectory_events (
+    run_id VARCHAR NOT NULL,
+    seq BIGINT NOT NULL,
+    event_type VARCHAR NOT NULL,
+    node VARCHAR,
+    turn_id VARCHAR,
+    span_id VARCHAR,
+    parent_span_id VARCHAR,
+    data_json VARCHAR NOT NULL DEFAULT '{}',
+    ts TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (run_id, seq)
+)
+"""
+
+_TRAJECTORY_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_trajectory_ts
+ON trajectory_events (ts)
+"""
+
 _CLEANUP_INTERVAL_S = 24 * 60 * 60
 
 
@@ -65,10 +86,12 @@ class MetricsWriter:
 
     def __init__(self) -> None:
         self.queue: asyncio.Queue[LLMEvent] = asyncio.Queue(maxsize=settings.metrics_queue_size)
+        self.trajectory_queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=settings.trajectory_queue_size)
         self._conn: duckdb.DuckDBPyConnection | None = None
         self._run_task: asyncio.Task | None = None
         self._cleanup_task: asyncio.Task | None = None
         self.dropped_events = 0
+        self.dropped_trajectory_events = 0
 
     def cursor(self) -> "duckdb.DuckDBPyConnection | None":
         """A fresh cursor on the writer's connection, for read-only queries.
@@ -86,6 +109,8 @@ class MetricsWriter:
         settings.metrics_db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = duckdb.connect(str(settings.metrics_db_path))
         self._conn.execute(_SCHEMA_SQL)
+        self._conn.execute(_TRAJECTORY_SCHEMA_SQL)
+        self._conn.execute(_TRAJECTORY_INDEX_SQL)
         self._run_task = asyncio.create_task(self._run())
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
@@ -100,6 +125,7 @@ class MetricsWriter:
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     pass
         await self._drain_and_write()
+        await self._drain_trajectory()
         if self._conn is not None:
             self._conn.close()
 
@@ -111,10 +137,24 @@ class MetricsWriter:
             self.dropped_events += 1
             logger.warning("Metrics queue full, dropping event %s", event.request_id)
 
+    def log_trajectory(self, event: Any) -> None:
+        """Non-blocking enqueue for agent trajectory events."""
+        try:
+            self.trajectory_queue.put_nowait(event)
+        except asyncio.QueueFull:
+            self.dropped_trajectory_events += 1
+            logger.warning("Trajectory queue full, dropping seq=%s for %s", getattr(event, "seq", "?"), getattr(event, "run_id", "?"))
+
+    async def flush_trajectory(self) -> None:
+        """Drain all queued trajectory events to DuckDB."""
+        while not self.trajectory_queue.empty():
+            await self._drain_trajectory()
+
     async def _run(self) -> None:
         while True:
             await self._drain_and_write()
-            await asyncio.sleep(settings.metrics_flush_interval_s)
+            await self._drain_trajectory()
+            await asyncio.sleep(min(settings.metrics_flush_interval_s, settings.trajectory_flush_interval_s))
 
     async def _drain_and_write(self) -> None:
         batch: list[LLMEvent] = []
@@ -165,6 +205,46 @@ class MetricsWriter:
         except Exception:
             logger.exception("Failed to write metrics batch")
 
+    async def _drain_trajectory(self) -> None:
+        batch: list[Any] = []
+        while len(batch) < settings.trajectory_batch_size:
+            try:
+                batch.append(self.trajectory_queue.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+        if not batch:
+            return
+        await asyncio.to_thread(self._write_trajectory_batch, batch)
+
+    def _write_trajectory_batch(self, batch: list[Any]) -> None:
+        if self._conn is None:
+            return
+        try:
+            self._conn.executemany(
+                """
+                INSERT INTO trajectory_events (
+                    run_id, seq, event_type, node, turn_id, span_id, parent_span_id, data_json, ts
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (run_id, seq) DO NOTHING
+                """,
+                [
+                    [
+                        e.run_id,
+                        int(getattr(e, "seq", 0)),
+                        str(e.event),
+                        getattr(e, "node", None),
+                        getattr(e, "turn_id", None),
+                        getattr(e, "span_id", None),
+                        getattr(e, "parent_span_id", None),
+                        json.dumps(getattr(e, "data", {}) or {}),
+                        datetime.fromtimestamp(float(getattr(e, "timestamp", time.time())), tz=timezone.utc).replace(tzinfo=None),
+                    ]
+                    for e in batch
+                ],
+            )
+        except Exception:
+            logger.exception("Failed to write trajectory batch")
+
     async def cleanup_old_traces(self) -> None:
         if self._conn is None:
             return
@@ -173,6 +253,10 @@ class MetricsWriter:
             self._conn.execute(
                 "UPDATE llm_events SET input_text = NULL, output_text = NULL "
                 "WHERE ts < now() - INTERVAL (?) DAYS AND input_text IS NOT NULL",
+                [settings.trace_retention_days],
+            )
+            self._conn.execute(
+                "DELETE FROM trajectory_events WHERE ts < now() - INTERVAL (?) DAYS",
                 [settings.trace_retention_days],
             )
 

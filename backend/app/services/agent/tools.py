@@ -190,6 +190,8 @@ async def execute_tool(
     args: dict[str, Any] | str,
     session_id: str,
     guardrail_ctx: ToolGuardrailContext | None = None,
+    emitter: Any = None,
+    tool_call_id: str | None = None,
 ) -> tuple[str, str, int, bool]:
     """
     Execute a tool against the sandbox session.
@@ -229,7 +231,27 @@ async def execute_tool(
                 language="bash",
                 timeout_s=settings.sandbox_default_timeout_s,
             )
-            result = await sandbox_service.execute_in_session(session_id, req)
+            chunk_idx = 0
+
+            async def _on_chunk(stream_name: str, delta: str) -> None:
+                nonlocal chunk_idx
+                if emitter is not None and hasattr(emitter, "emit_tool_output_delta"):
+                    stream_lit = "stderr" if stream_name == "stderr" else "stdout"
+                    await emitter.emit_tool_output_delta(
+                        tool_call_id=tool_call_id or "call_stream",
+                        tool_name=name,
+                        stream=stream_lit,
+                        delta=delta,
+                        chunk_index=chunk_idx,
+                        node="observe",
+                    )
+                    chunk_idx += 1
+
+            result = await sandbox_service.execute_in_session_stream(
+                session_id,
+                req,
+                on_chunk=_on_chunk if emitter is not None else None,
+            )
             output = result.stdout
             if result.stderr:
                 output = f"{output}\n{result.stderr}" if output else result.stderr
@@ -324,7 +346,27 @@ async def execute_tool(
                 language="python",
                 timeout_s=settings.sandbox_default_timeout_s,
             )
-            result = await sandbox_service.execute_in_session(session_id, req)
+            chunk_idx = 0
+
+            async def _on_repl_chunk(stream_name: str, delta: str) -> None:
+                nonlocal chunk_idx
+                if emitter is not None and hasattr(emitter, "emit_tool_output_delta"):
+                    stream_lit = "stderr" if stream_name == "stderr" else "stdout"
+                    await emitter.emit_tool_output_delta(
+                        tool_call_id=tool_call_id or "call_stream",
+                        tool_name=name,
+                        stream=stream_lit,
+                        delta=delta,
+                        chunk_index=chunk_idx,
+                        node="observe",
+                    )
+                    chunk_idx += 1
+
+            result = await sandbox_service.execute_in_session_stream(
+                session_id,
+                req,
+                on_chunk=_on_repl_chunk if emitter is not None else None,
+            )
             output = result.stdout
             if result.stderr:
                 output = f"{output}\n{result.stderr}" if output else result.stderr

@@ -92,6 +92,12 @@ export async function POST(req: Request) {
             try {
               const event = JSON.parse(jsonStr);
 
+              // Forward lossless AgentEvent for the live Trajectory Event Stream
+              writer.write({
+                type: "data-trajectory",
+                data: event,
+              } as unknown as Parameters<typeof writer.write>[0]);
+
               switch (event.event) {
                 case "reasoning.delta": {
                   if (!hasStartedReasoning) {

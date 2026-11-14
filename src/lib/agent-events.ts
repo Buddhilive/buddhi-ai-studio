@@ -1,12 +1,17 @@
 export type AgentEventType =
   | "run.start"
+  | "turn.start"
+  | "turn.end"
   | "node.start"
   | "node.end"
   | "reasoning.delta"
   | "text.delta"
   | "plan.update"
   | "tool.call"
+  | "tool.args.delta"
+  | "tool.output.delta"
   | "tool.result"
+  | "usage.update"
   | "error"
   | "run.end"
   | "egm.phase"
@@ -147,6 +152,11 @@ export interface ToolResultData {
 export interface AgentEvent {
   event: AgentEventType;
   run_id: string;
+  seq?: number;
+  timestamp_ms?: number;
+  turn_id?: string | null;
+  span_id?: string | null;
+  parent_span_id?: string | null;
   node?: string | null;
   data: Record<string, unknown>;
   timestamp: number;

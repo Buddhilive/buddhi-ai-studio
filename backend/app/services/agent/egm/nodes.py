@@ -112,29 +112,42 @@ async def goldfish_review_node(state: AgentState, emitter: AgentEventEmitter | N
         ("implementation_readiness", "implementation-readiness-standard", "Stage 5: Implementation Readiness"),
     ]
 
+    round_num = state.get("egm_round", 1)
     outputs: list[ReviewerOutput] = []
 
-    for persona_id, standard_name, stage_label in pipeline_stages:
-        if emitter:
-            await emitter.emit_egm_reviewer_status(stage_label, persona_id, "running", round_num=state.get("egm_round", 1))
+    async def _run_pipeline() -> None:
+        for idx, (persona_id, standard_name, stage_label) in enumerate(pipeline_stages, start=1):
+            span_id = f"egm_{persona_id}_r{round_num}_s{idx}"
+            if emitter:
+                async with emitter.span(span_id):
+                    await emitter.emit_egm_reviewer_status(stage_label, persona_id, "running", round_num=round_num)
+                    inp = GoldfishReviewInput(
+                        persona_id=persona_id,
+                        standard_name=standard_name,
+                        target_document=spec_content,
+                    )
+                    out = await runner.run_single_reviewer(inp, stage=stage_label)
+                    outputs.append(out)
+                    findings_cnt = len(Synthesizer.parse_raw_findings(out.raw_content, persona_id)) if out.status == "completed" else None
+                    await emitter.emit_egm_reviewer_status(
+                        stage_label, persona_id, out.status, round_num=round_num, findings_count=findings_cnt
+                    )
+            else:
+                inp = GoldfishReviewInput(
+                    persona_id=persona_id,
+                    standard_name=standard_name,
+                    target_document=spec_content,
+                )
+                out = await runner.run_single_reviewer(inp, stage=stage_label)
+                outputs.append(out)
 
-        inp = GoldfishReviewInput(
-            persona_id=persona_id,
-            standard_name=standard_name,
-            target_document=spec_content,
-        )
-
-        out = await runner.run_single_reviewer(inp, stage=stage_label)
-        outputs.append(out)
-
-        if emitter:
-            findings_cnt = len(Synthesizer.parse_raw_findings(out.raw_content, persona_id)) if out.status == "completed" else None
-            await emitter.emit_egm_reviewer_status(
-                stage_label, persona_id, out.status, round_num=state.get("egm_round", 1), findings_count=findings_cnt
-            )
+    if emitter:
+        async with emitter.span(f"egm_review_r{round_num}"):
+            await _run_pipeline()
+    else:
+        await _run_pipeline()
 
     # Synthesize findings
-    round_num = state.get("egm_round", 1)
     report_model, report_md = Synthesizer.compile_review_report(round_num, outputs, target_path=spec_path)
 
     # Dual storage persistence

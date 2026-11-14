@@ -236,6 +236,7 @@ class RlmSpoolBridge:
         budget_tracker: RlmBudgetTracker,
         stop_event: asyncio.Event,
         poll_interval_s: float = 0.1,
+        emitter: Any = None,
     ) -> None:
         """Polls the sandbox session's .rlm_spool directory and processes requests."""
         while not stop_event.is_set():
@@ -265,7 +266,12 @@ class RlmSpoolBridge:
                             continue
 
                         # Process request
-                        response_data = await self.handle_request_payload(req_data, budget_tracker)
+                        req_id_hint = str(req_data.get("req_id") or "subcall")
+                        if emitter is not None and hasattr(emitter, "span"):
+                            async with emitter.span(f"rlm_{req_id_hint}"):
+                                response_data = await self.handle_request_payload(req_data, budget_tracker)
+                        else:
+                            response_data = await self.handle_request_payload(req_data, budget_tracker)
                         req_id = response_data.get("req_id", "unknown")
                         res_path = f".rlm_spool/res-{req_id}.json"
 

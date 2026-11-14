@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 
 from app.core import settings_store
@@ -61,9 +62,23 @@ async def generate_with_streaming(
     emitter: AgentEventEmitter | None = None,
     tools: list[Any] | None = None,
 ) -> tuple[str, str]:
-    """Generates completion and emits reasoning and text deltas."""
+    """Generates completion and emits reasoning, text, turn, and usage events."""
     output_parts: list[str] = []
     reasoning_parts: list[str] = []
+    start_t = time.perf_counter()
+    turn_id = f"turn_{node_name}_{int(start_t * 1000)}"
+    turn_status = "completed"
+
+    if emitter:
+        prompt_preview = ""
+        if messages:
+            last_msg = messages[-1]
+            raw_content = getattr(last_msg, "content", None) or (
+                last_msg.get("content") if isinstance(last_msg, dict) else ""
+            )
+            if isinstance(raw_content, str):
+                prompt_preview = raw_content[:120].replace("\n", " ").strip()
+        await emitter.emit_turn_start(turn_id, node=node_name, prompt_preview=prompt_preview)
 
     try:
         async for delta in inference_engine_manager.generate_stream(
@@ -80,12 +95,44 @@ async def generate_with_streaming(
                 output_parts.append(delta.content)
                 if emitter:
                     await emitter.emit_text_delta(node_name, delta.content)
+            tc_deltas = getattr(delta, "tool_calls", None)
+            if tc_deltas and emitter:
+                for tc_chunk in tc_deltas:
+                    fn = getattr(tc_chunk, "function", None)
+                    args_piece = getattr(fn, "arguments", None) if fn else None
+                    if args_piece:
+                        await emitter.emit_tool_args_delta(
+                            tool_call_id=getattr(tc_chunk, "id", None) or "call_stream",
+                            tool_name=(getattr(fn, "name", None) or "") if fn else "",
+                            delta=args_piece,
+                            node=node_name,
+                        )
     except Exception as exc:
+        turn_status = "error"
         logger.error("Error in inference stream for node %s: %s", node_name, exc)
         raise
+    finally:
+        duration_ms = int((time.perf_counter() - start_t) * 1000)
+        full_output = "".join(output_parts)
+        full_reasoning = "".join(reasoning_parts)
+        if emitter:
+            in_tokens: int | None = None
+            out_tokens: int | None = None
+            try:
+                count_fn = getattr(inference_engine_manager, "count_tokens", None)
+                if callable(count_fn):
+                    out_tokens = count_fn(full_output + full_reasoning, model_id)
+            except Exception:
+                pass
+            await emitter.emit_usage_update(
+                node=node_name,
+                input_tokens=in_tokens,
+                output_tokens=out_tokens,
+                total_tokens=(in_tokens or 0) + (out_tokens or 0) if (in_tokens is not None or out_tokens is not None) else None,
+                duration_ms=duration_ms,
+            )
+            await emitter.emit_turn_end(turn_id, node=node_name, duration_ms=duration_ms, status=turn_status)
 
-    full_output = "".join(output_parts)
-    full_reasoning = "".join(reasoning_parts)
     return full_output, full_reasoning
 
 
@@ -242,7 +289,12 @@ async def observe_node(state: AgentState, emitter: AgentEventEmitter | None = No
         t_name = tc.function.name or ""
         t_args = tc.function.arguments or "{}"
         status, output, exit_code, truncated = await execute_tool(
-            t_name, t_args, session_id, guardrail_ctx=guardrail_ctx
+            t_name,
+            t_args,
+            session_id,
+            guardrail_ctx=guardrail_ctx,
+            emitter=emitter,
+            tool_call_id=tc.id,
         )
 
         if emitter:

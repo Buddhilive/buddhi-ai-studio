@@ -61,6 +61,9 @@ import { useCallback, useMemo, useState } from "react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useChat } from "@ai-sdk/react";
 import { AgentMessagePart } from "@/components/chat/agent-parts";
+import { TrajectoryPanel } from "@/components/trajectory/trajectory-panel";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { extractTrajectoryEventsFromMessages } from "@/hooks/use-trajectory-stream";
 import { toast } from "sonner";
 const AttachmentItem = ({
     attachment,
@@ -229,15 +232,34 @@ export default function ChatInterface() {
         return "";
     }, [status]);
 
+    const trajectoryEvents = useMemo(
+        () => extractTrajectoryEventsFromMessages(messages),
+        [messages]
+    );
+
     return (
         <div className="relative flex h-[calc(100vh-80px)] flex-col divide-y overflow-hidden">
+            <Tabs defaultValue="conversation" className="flex min-h-0 flex-1 flex-col">
+                <div className="flex items-center justify-between border-b border-border bg-card px-4 py-1.5">
+                    <TabsList variant="line">
+                        <TabsTrigger value="conversation">Conversation</TabsTrigger>
+                        <TabsTrigger value="trajectory">
+                            Trajectory{trajectoryEvents.length > 0 ? ` (${trajectoryEvents.length})` : ""}
+                        </TabsTrigger>
+                    </TabsList>
+                </div>
+
+                <TabsContent value="conversation" className="flex min-h-0 flex-1 flex-col">
             <Conversation>
                 <ConversationContent>
                     {messages.map((message: UIMessage) => {
                         const reasoningPart = message.parts?.find((p) => (p as { type: string }).type === "reasoning") as { state?: string; text?: string } | undefined;
                         const textParts = (message.parts?.filter((p) => (p as { type: string }).type === "text") || []) as Array<{ text: string }>;
                         const fileParts = (message.parts?.filter((p) => (p as { type: string }).type === "file") || []) as Array<AttachmentData>;
-                        const otherParts = (message.parts?.filter((p) => (p as { type: string }).type !== "text" && (p as { type: string }).type !== "reasoning" && (p as { type: string }).type !== "file") || []) as Array<Record<string, unknown>>;
+                        const otherParts = (message.parts?.filter((p) => {
+                            const t = (p as { type: string }).type;
+                            return t !== "text" && t !== "reasoning" && t !== "file" && t !== "data-trajectory";
+                        }) || []) as Array<Record<string, unknown>>;
                         const isReasoningStreaming = reasoningPart?.state === "streaming";
 
                         return (
@@ -289,6 +311,16 @@ export default function ChatInterface() {
                 </ConversationContent>
                 <ConversationScrollButton />
             </Conversation>
+                </TabsContent>
+
+                <TabsContent value="trajectory" className="min-h-0 flex-1">
+                    <TrajectoryPanel
+                        events={trajectoryEvents}
+                        mode="live"
+                        isStreaming={status === "streaming" || status === "submitted"}
+                    />
+                </TabsContent>
+            </Tabs>
             <div className="grid shrink-0 gap-4 pt-4">
                 <div className="w-full px-4 pb-4">
                     {downloadedLlmModels.length === 0 && (

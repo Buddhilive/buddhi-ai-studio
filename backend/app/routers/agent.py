@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from fastapi import APIRouter, HTTPException, status
+from typing import Any, Literal
+from fastapi import APIRouter, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse
 
 from app.core.openai_errors import openai_error
@@ -53,6 +54,41 @@ async def cancel_agent_run(run_id: str):
             detail=f"Run {run_id} not found or already completed",
         )
     return {"status": "cancelled", "run_id": run_id}
+
+
+@router.get("/runs/{run_id}/trajectory")
+async def get_agent_trajectory(
+    run_id: str = Path(..., pattern=r"^[a-zA-Z0-9_-]{1,64}$"),
+    after_seq: int = Query(0, ge=0),
+    format: Literal["json", "jsonl"] = Query("json"),
+):
+    from app.services.agent.trajectory import trajectory_store
+
+    events = await trajectory_store.list_events_after(run_id, after_seq=after_seq)
+    if not events and after_seq == 0 and agent_run_manager.get_active_run(run_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Trajectory for run {run_id} not found",
+        )
+
+    if format == "jsonl":
+        headers = {
+            "Content-Disposition": f'attachment; filename="trajectory-{run_id}.jsonl"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        }
+        return StreamingResponse(
+            trajectory_store.stream_export(run_id, fmt="jsonl", after_seq=after_seq),
+            media_type="application/x-ndjson; charset=utf-8",
+            headers=headers,
+        )
+
+    last_seq = events[-1]["seq"] if events else after_seq
+    return {
+        "run_id": run_id,
+        "last_seq": last_seq,
+        "events": events,
+    }
 
 
 @router.post("/runs/{run_id}/resolve")

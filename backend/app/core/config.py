@@ -117,5 +117,14 @@ class Settings(BaseSettings):
     harness_calibration_retention_days: int = 30
     sandbox_max_active_sessions: int = 8
 
+    # Trajectory Event Stream
+    trajectory_queue_size: int = 2000
+    trajectory_batch_size: int = 100
+    trajectory_flush_interval_s: float = 0.5
+    trajectory_emitter_queue_size: int = 512
+    sandbox_stream_chunk_chars: int = 2048
+    sandbox_stream_flush_ms: int = 100
+    sandbox_max_output_bytes: int = 1_048_576
+
 
 settings = Settings()
