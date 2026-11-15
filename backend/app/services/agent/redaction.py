@@ -13,10 +13,10 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\b(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"), "[REDACTED_GH_TOKEN]"),
     (re.compile(r"\b(AKIA[0-9A-Z]{16})\b"), "[REDACTED_AWS_KEY]"),
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"), "[REDACTED_PRIVATE_KEY]"),
-    (re.compile(r"(https?://[^:\s/@]+:)[^@\s/]+(@)"), r"\1[REDACTED]\2"),
+    (re.compile(r"((?:https?|postgresql|postgres|mysql|redis)://[^:\s/@]+:)[^@\s/\"']+(@)", re.IGNORECASE), r"\1[REDACTED]\2"),
     (
         re.compile(
-            r"""((?:api_key|apikey|token|secret|password|passwd|private_key)["']?\s*[:=]\s*["']?)([^\s"',}\]]{4,})""",
+            r"""((?:api_key|apikey|token|secret|password|passwd|private_key|better_auth_secret|postgres_password|database_url|auth_secret|nextauth_secret)["']?\s*[:=]\s*["']?)([^\s"',}\]]{4,})""",
             re.IGNORECASE,
         ),
         r"\1[REDACTED]",
@@ -27,6 +27,7 @@ _DEFAULT_PLACEHOLDERS = {
     "changeme-opensandbox-key",
     "changeme-crawl4ai-token",
     "changeme-rustfs-secret-key",
+    "changeme-postgres-password",
 }
 
 
@@ -35,6 +36,7 @@ def _runtime_secrets() -> list[str]:
         getattr(settings, "opensandbox_api_key", ""),
         getattr(settings, "crawl4ai_api_token", ""),
         getattr(settings, "rustfs_secret_key", ""),
+        getattr(settings, "postgres_password", ""),
     ]
     try:
         from app.core.settings_store import get_hf_token
@@ -82,13 +84,13 @@ def sanitize_event_data(event_type: str, data: dict[str, Any]) -> dict[str, Any]
         out["delta"] = capped
         if was_truncated:
             out["truncated"] = True
-    elif event_type == "tool.result" and isinstance(out.get("output"), str):
+    elif event_type in ("tool.result", "tool.end") and isinstance(out.get("output"), str):
         scrubbed = redact_text(out["output"])
         capped, was_truncated = truncate_utf8_bytes(scrubbed, 16384)
         out["output"] = capped
         if was_truncated:
             out["truncated"] = True
-    elif event_type == "tool.call" and "arguments" in out:
+    elif event_type in ("tool.call", "tool.start") and "arguments" in out:
         args = out["arguments"]
         if isinstance(args, str):
             out["arguments"], _ = truncate_utf8_bytes(redact_text(args), 16384)

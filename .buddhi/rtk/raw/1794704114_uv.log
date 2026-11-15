@@ -1,0 +1,13 @@
+  × No solution found when resolving dependencies for split (markers:
+  │ python_full_version >= '3.14'):
+  ╰─▶ Because ai-edge-litert was not found in the package registry and your
+      project depends on ai-edge-litert>=2.2.0, we can conclude that your
+      project's requirements are unsatisfiable.
+
+      hint: While the active Python version is 3.12, the resolution failed for
+      other Python versions supported by your project. Consider limiting your
+      project's supported Python versions using `requires-python`.
+
+      hint: An index URL (https://pypi.org/simple) returned a 403 Forbidden
+      error. This could indicate lack of valid authentication credentials, or
+      the package may not exist on this index.

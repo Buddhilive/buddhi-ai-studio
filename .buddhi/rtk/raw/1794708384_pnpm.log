@@ -1,0 +1,24 @@
+ WARN  Issue while reading "C:\Users\Buddhi\.npmrc". EPERM: operation not permitted, open 'C:\Users\Buddhi\.npmrc'
+sandbox/vibe-starter/drizzle.config.ts(1,30): error TS2307: Cannot find module 'drizzle-kit' or its corresponding type declarations.
+sandbox/vibe-starter/src/app/api/auth/[...all]/route.ts(1,33): error TS2307: Cannot find module 'better-auth/next-js' or its corresponding type declarations.
+sandbox/vibe-starter/src/app/api/auth/[...all]/route.ts(2,22): error TS2307: Cannot find module '@/lib/auth' or its corresponding type declarations.
+sandbox/vibe-starter/src/app/api/chat/route.ts(2,33): error TS2307: Cannot find module '@/lib/ai' or its corresponding type declarations.
+sandbox/vibe-starter/src/db/index.ts(1,22): error TS2307: Cannot find module 'better-sqlite3' or its corresponding type declarations.
+sandbox/vibe-starter/src/db/index.ts(2,38): error TS2307: Cannot find module 'drizzle-orm/node-postgres' or its corresponding type declarations.
+sandbox/vibe-starter/src/db/index.ts(3,42): error TS2307: Cannot find module 'drizzle-orm/better-sqlite3' or its corresponding type declarations.
+sandbox/vibe-starter/src/db/index.ts(4,22): error TS2307: Cannot find module 'pg' or its corresponding type declarations.
+sandbox/vibe-starter/src/db/schema.pg.ts(1,58): error TS2307: Cannot find module 'drizzle-orm/pg-core' or its corresponding type declarations.
+sandbox/vibe-starter/src/db/schema.pg.ts(27,4): error TS7006: Parameter 'table' implicitly has an 'any' type.
+sandbox/vibe-starter/src/db/schema.pg.ts(49,4): error TS7006: Parameter 'table' implicitly has an 'any' type.
+sandbox/vibe-starter/src/db/schema.pg.ts(65,4): error TS7006: Parameter 'table' implicitly has an 'any' type.
+sandbox/vibe-starter/src/db/schema.sqlite.ts(1,51): error TS2307: Cannot find module 'drizzle-orm/sqlite-core' or its corresponding type declarations.
+sandbox/vibe-starter/src/db/schema.sqlite.ts(27,4): error TS7006: Parameter 'table' implicitly has an 'any' type.
+sandbox/vibe-starter/src/db/schema.sqlite.ts(49,4): error TS7006: Parameter 'table' implicitly has an 'any' type.
+sandbox/vibe-starter/src/db/schema.sqlite.ts(65,4): error TS7006: Parameter 'table' implicitly has an 'any' type.
+sandbox/vibe-starter/src/lib/ai.ts(1,40): error TS2307: Cannot find module '@ai-sdk/openai-compatible' or its corresponding type declarations.
+sandbox/vibe-starter/src/lib/auth-client.ts(1,34): error TS2307: Cannot find module 'better-auth/react' or its corresponding type declarations.
+sandbox/vibe-starter/src/lib/auth.ts(1,28): error TS2307: Cannot find module 'better-auth' or its corresponding type declarations.
+sandbox/vibe-starter/src/lib/auth.ts(2,32): error TS2307: Cannot find module 'better-auth/adapters/drizzle' or its corresponding type declarations.
+sandbox/vibe-starter/src/lib/auth.ts(3,20): error TS2307: Cannot find module '@/db' or its corresponding type declarations.
+sandbox/vibe-starter/src/lib/auth.ts(4,27): error TS2307: Cannot find module '@/db/schema.pg' or its corresponding type declarations.
+sandbox/vibe-starter/src/lib/auth.ts(5,31): error TS2307: Cannot find module '@/db/schema.sqlite' or its corresponding type declarations.

@@ -161,6 +161,23 @@ class AgentEventEmitter:
             },
         )
 
+    async def emit_tool_start(
+        self,
+        tool_call_id: str,
+        tool_name: str,
+        arguments: dict[str, Any] | str | None = None,
+        node: str | None = None,
+    ) -> None:
+        await self.emit(
+            "tool.start",
+            node=node,
+            data={
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "arguments": arguments or {},
+            },
+        )
+
     async def emit_tool_args_delta(
         self,
         tool_call_id: str,
@@ -231,6 +248,29 @@ class AgentEventEmitter:
     ) -> None:
         await self.emit(
             "tool.result",
+            data={
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "status": status,
+                "output": output,
+                "exit_code": exit_code,
+                "truncated": truncated,
+            },
+        )
+
+    async def emit_tool_end(
+        self,
+        tool_call_id: str,
+        tool_name: str,
+        status: str,
+        output: str,
+        exit_code: int = 0,
+        truncated: bool = False,
+        node: str | None = None,
+    ) -> None:
+        await self.emit(
+            "tool.end",
+            node=node,
             data={
                 "tool_call_id": tool_call_id,
                 "tool_name": tool_name,

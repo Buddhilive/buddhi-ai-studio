@@ -1,7 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRightIcon, WrenchIcon, CheckCircle2Icon, AlertCircleIcon, Loader2Icon } from "lucide-react";
+import {
+  ChevronRightIcon,
+  WrenchIcon,
+  CheckCircle2Icon,
+  AlertCircleIcon,
+  Loader2Icon,
+  SearchIcon,
+  GlobeIcon,
+  DatabaseIcon,
+  LayersIcon,
+  ShieldCheckIcon,
+  BookOpenIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -73,6 +85,30 @@ export function ToolCard({
     }
   }, [status, exitCode]);
 
+  const categoryMeta = React.useMemo(() => {
+    if (toolName === "search_web") {
+      return { label: "SearXNG", Icon: SearchIcon };
+    }
+    if (toolName.startsWith("crawl_")) {
+      return { label: "Crawl4AI", Icon: GlobeIcon };
+    }
+    if (toolName === "provision_postgres_db" || toolName === "query_database" || toolName === "drizzle_kit") {
+      return { label: "Database", Icon: DatabaseIcon };
+    }
+    if (toolName === "nextjs_devtools" || toolName === "shadcn_registry") {
+      return { label: "Next.js Stack", Icon: LayersIcon };
+    }
+    if (toolName === "better_auth_cli") {
+      return { label: "BetterAuth", Icon: ShieldCheckIcon };
+    }
+    if (toolName === "load_skill") {
+      return { label: "Skill", Icon: BookOpenIcon };
+    }
+    return { label: null, Icon: WrenchIcon };
+  }, [toolName]);
+
+  const CategoryIcon = categoryMeta.Icon;
+
   return (
     <Collapsible
       open={isOpen}
@@ -87,7 +123,12 @@ export function ToolCard({
             className={cn("size-3.5 shrink-0 transition-transform duration-200", isOpen && "rotate-90")}
             aria-hidden="true"
           />
-          <WrenchIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <CategoryIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          {categoryMeta.label ? (
+            <Badge variant="secondary" className="text-[10px] font-sans px-1.5 py-0">
+              {categoryMeta.label}
+            </Badge>
+          ) : null}
           <span className="font-semibold truncate">{toolName}</span>
           {toolCallId && (
             <span className="text-[10px] text-muted-foreground hidden sm:inline">

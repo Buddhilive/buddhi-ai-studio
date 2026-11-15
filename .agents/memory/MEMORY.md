@@ -6,6 +6,7 @@ okf_version: "0.2"
 
 * [2026-10-06 (spec 006): User-generated tool output (e.g](decisions/mem-decision-2026-10-06-spec-006-user-generated-tool-output-e-g.md) - 2026-10-06
 * [2026-11-13 (spec 009): Elephant-Goldfish Model (EGM) LangGraph Architecture](decisions/mem-decision-2026-11-13-spec-009-elephant-goldfish-model-egm
+* [2026-11-15 (spec 012): Next.js Vibe-Coding Agent Optimization & Service Tooling Architecture](decisions/mem-decision-2026-11-15-spec-012-next-js-vi
 * [communication style, workflow preferences — get appended ...](preferences/mem-preference-communication-style-workflow-preferences-get-appended.md) 
 * [get appended here by `/remember` or other harness work, o...](decisions/mem-decision-get-appended-here-by--remember-or-other-harness-work-o.md) - g
 * [naming, structure, process — get appended here by `/remem...](conventions/mem-convention-naming-structure-process-get-appended-here-by--remem.md) -

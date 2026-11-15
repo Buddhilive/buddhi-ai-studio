@@ -56,12 +56,32 @@ class Settings(BaseSettings):
     opensandbox_server_url: str = "http://localhost:8090"
     opensandbox_api_key: str = "changeme-opensandbox-key"
     sandbox_default_timeout_s: int = 60
-    sandbox_default_memory_mb: int = 512
+    sandbox_default_memory_mb: int = 2048
     sandbox_default_allow_network: bool = False
-    sandbox_default_image: str = "python:3.11-slim"
+    sandbox_default_image: str = "buddhilive/vibe-sandbox:latest"
     sandbox_session_inactivity_ttl_s: int = 1800
     sandbox_rlm_memory_mb: int = 256
     sandbox_rlm_idle_ttl_s: int = 300
+    local_llm_base_url: str = "http://backend:8000/v1"
+
+    # PostgreSQL (Generated Vibe Apps)
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_user: str = "buddhi"
+    postgres_password: str = "changeme-postgres-password"
+    postgres_admin_db: str = "postgres"
+    postgres_sandbox_host: str = "postgres"
+    postgres_connect_timeout_s: int = 5
+    postgres_url: str = ""
+
+    @property
+    def postgres_admin_dsn(self) -> str:
+        if self.postgres_url:
+            return self.postgres_url
+        return (
+            f"postgresql://{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_admin_db}"
+        )
 
     # RLM (Recursive Language Model)
     rlm_max_depth: int = 2

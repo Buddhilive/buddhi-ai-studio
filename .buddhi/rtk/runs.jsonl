@@ -1,0 +1,17 @@
+{"timestamp": 1794704114, "command": "uv run [args redacted]", "filter_name": "generic", "raw_tokens": 183, "filtered_tokens": 182, "saved_tokens": 1, "exit_code": 1}
+{"timestamp": 1794704127, "command": "backend\\.venv\\Scripts\\pytest [args redacted]", "filter_name": "generic", "raw_tokens": 628, "filtered_tokens": 627, "saved_tokens": 1, "exit_code": 1}
+{"timestamp": 1794704178, "command": "backend\\.venv\\Scripts\\pytest [args redacted]", "filter_name": "generic", "raw_tokens": 630, "filtered_tokens": 630, "saved_tokens": 0, "exit_code": 1}
+{"timestamp": 1794704221, "command": "backend\\.venv\\Scripts\\pytest [args redacted]", "filter_name": "generic", "raw_tokens": 302, "filtered_tokens": 301, "saved_tokens": 1, "exit_code": 0}
+{"timestamp": 1794704360, "command": "backend\\.venv\\Scripts\\pytest [args redacted]", "filter_name": "generic", "raw_tokens": 1467, "filtered_tokens": 1020, "saved_tokens": 447, "exit_code": 1}
+{"timestamp": 1794704447, "command": "backend\\.venv\\Scripts\\pytest [args redacted]", "filter_name": "generic", "raw_tokens": 316, "filtered_tokens": 316, "saved_tokens": 0, "exit_code": 0}
+{"timestamp": 1794704466, "command": "backend\\.venv\\Scripts\\pytest [args redacted]", "filter_name": "generic", "raw_tokens": 278, "filtered_tokens": 277, "saved_tokens": 1, "exit_code": 0}
+{"timestamp": 1794704573, "command": "backend\\.venv\\Scripts\\pytest [args redacted]", "filter_name": "generic", "raw_tokens": 623, "filtered_tokens": 623, "saved_tokens": 0, "exit_code": 2}
+{"timestamp": 1794704587, "command": "pnpm test", "filter_name": "npm", "raw_tokens": 302, "filtered_tokens": 215, "saved_tokens": 87, "exit_code": 0}
+{"timestamp": 1794704665, "command": "backend\\.venv\\Scripts\\pytest [args redacted]", "filter_name": "generic", "raw_tokens": 6525, "filtered_tokens": 1560, "saved_tokens": 4965, "exit_code": 3221225480}
+{"timestamp": 1794704750, "command": "backend\\.venv\\Scripts\\pytest [args redacted]", "filter_name": "generic", "raw_tokens": 2595, "filtered_tokens": 1216, "saved_tokens": 1379, "exit_code": 3221225480}
+{"timestamp": 1794704822, "command": "backend\\.venv\\Scripts\\pytest [args redacted]", "filter_name": "generic", "raw_tokens": 887, "filtered_tokens": 887, "saved_tokens": 0, "exit_code": 3221225480}
+{"timestamp": 1794708368, "command": "pnpm test", "filter_name": "npm", "raw_tokens": 302, "filtered_tokens": 215, "saved_tokens": 87, "exit_code": 0}
+{"timestamp": 1794708384, "command": "pnpm [args redacted]", "filter_name": "generic", "raw_tokens": 792, "filtered_tokens": 792, "saved_tokens": 0, "exit_code": 2}
+{"timestamp": 1794708415, "command": "pnpm [args redacted]", "filter_name": "generic", "raw_tokens": 5578, "filtered_tokens": 1446, "saved_tokens": 4132, "exit_code": 1}
+{"timestamp": 1794708493, "command": "pnpm [args redacted]", "filter_name": "generic", "raw_tokens": 29, "filtered_tokens": 29, "saved_tokens": 0, "exit_code": 0}
+{"timestamp": 1794708509, "command": "pnpm [args redacted]", "filter_name": "generic", "raw_tokens": 29, "filtered_tokens": 29, "saved_tokens": 0, "exit_code": 0}

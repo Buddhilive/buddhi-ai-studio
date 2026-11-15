@@ -74,5 +74,6 @@ def create_mock_sandbox():
             execution_time_ms=12.0,
         )
     )
+    mock_sb.execute_in_session_stream = mock_sb.execute_in_session
     mock_sb.terminate_session = AsyncMock(return_value=True)
     return mock_sb

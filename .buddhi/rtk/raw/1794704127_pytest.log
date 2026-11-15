@@ -1,0 +1,44 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.12, pytest-9.1.1, pluggy-1.6.0 -- C:\DevDojo\Buddhi\buddhi-ai-studio\backend\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\DevDojo\Buddhi\buddhi-ai-studio\backend
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 6 items
+
+backend\tests\test_agent_service_tools.py::test_service_tools_registered_in_agent_definitions PASSED [ 16%]
+backend\tests\test_agent_service_tools.py::test_execute_search_web_success FAILED [ 33%]
+backend\tests\test_agent_service_tools.py::test_execute_crawl_url_and_page_content_success PASSED [ 50%]
+backend\tests\test_agent_service_tools.py::test_execute_crawl_batch_urls_caps_and_aggregates PASSED [ 66%]
+backend\tests\test_agent_service_tools.py::test_service_tools_output_truncation_and_emitter_events PASSED [ 83%]
+backend\tests\test_agent_service_tools.py::test_search_and_crawl_offline_fallback PASSED [100%]
+
+================================== FAILURES ===================================
+_______________________ test_execute_search_web_success _______________________
+
+    @pytest.mark.asyncio
+    async def test_execute_search_web_success() -> None:
+        mock_response = SearchResponse(
+            query="better-auth drizzle adapter",
+            results=[
+>               SearchResultItem(
+                    title="Better Auth Drizzle",
+                    url="https://www.better-auth.com/docs/adapters/drizzle",
+                    content="Use drizzleAdapter(db, { provider: 'pg' }).",
+                    engine="google",
+                )
+            ],
+            total_results=1,
+            engines_used=["google"],
+            cached=False,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for SearchResultItem
+E       snippet
+E         Field required [type=missing, input_value={'title': 'Better Auth Dr...).", 'engine': 'google'}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+backend\tests\test_agent_service_tools.py:26: ValidationError
+=========================== short test summary info ===========================
+FAILED backend\tests\test_agent_service_tools.py::test_execute_search_web_success
+========================= 1 failed, 5 passed in 1.42s =========================

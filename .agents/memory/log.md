@@ -1,5 +1,8 @@
 # Memory Mutation Log
 
+## 2026-11-14 18:51:39Z - [SAVED] `mem-decision-2026-11-15-spec-012-next-js-vibe-coding-agent-optimization-s`: 2026-11-15 (spec 012): Next.js Vibe-Coding Agent Optimization & Service Tooling Architecture
+Kind: decision, Summary: 2026-11-15 (spec 012): Modular Vibe-Stack Agent Tools, Per-Workspace Postgres Provisioning, and Two-Tier Skill Loading Architecture
+
 ## 2026-11-13 13:20:12Z - [SAVED] `mem-decision-2026-11-13-spec-009-elephant-goldfish-model-egm-langgraph-ar`: 2026-11-13 (spec 009): Elephant-Goldfish Model (EGM) LangGraph Architecture
 Kind: decision, Summary: Opt-in EGM spec-first LangGraph workflow with zero-context GoldfishRunner, DuckDB BLOB checkpointer + sandbox dual storage, and fail-closed verification.
 

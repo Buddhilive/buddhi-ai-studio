@@ -1,0 +1,98 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.12, pytest-9.1.1, pluggy-1.6.0 -- C:\DevDojo\Buddhi\buddhi-ai-studio\backend\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\DevDojo\Buddhi\buddhi-ai-studio\backend
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 6 items
+
+backend\tests\test_agent_db_and_guardrails.py::test_guardrail_blocks_pages_router_and_banned_packages PASSED [ 16%]
+backend\tests\test_agent_db_and_guardrails.py::test_provision_postgres_db_identifier_sanitization PASSED [ 33%]
+backend\tests\test_agent_db_and_guardrails.py::test_provision_postgres_db_idempotent_and_masked_env FAILED [ 50%]
+backend\tests\test_agent_db_and_guardrails.py::test_provision_sqlite_and_query_database FAILED [ 66%]
+backend\tests\test_agent_db_and_guardrails.py::test_query_database_postgres_blocks_privileged_and_enforces_workspace PASSED [ 83%]
+backend\tests\test_agent_db_and_guardrails.py::test_drizzle_kit_deterministic_execution FAILED [100%]
+
+================================== FAILURES ===================================
+____________ test_provision_postgres_db_idempotent_and_masked_env _____________
+
+    @pytest.mark.asyncio
+    async def test_provision_postgres_db_idempotent_and_masked_env() -> None:
+        mock_cursor = MagicMock()
+        mock_cursor.execute = AsyncMock()
+        mock_cursor.fetchone = AsyncMock(side_effect=[None, None])
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=None)
+    
+        mock_conn = MagicMock()
+        mock_conn.execute = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=None)
+    
+        with (
+>           patch("psycopg.AsyncConnection.connect", new=AsyncMock(return_value=mock_conn)),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            patch("app.services.agent.vibe_tools.sandbox_service.read_session_file", new=AsyncMock(side_effect=FileNotFoundError)),
+            patch("app.services.agent.vibe_tools.sandbox_service.write_session_file", new=AsyncMock(return_value=True)) as mock_write,
+            patch("app.services.agent.vibe_tools.harness_storage_service.upsert_provisioned_database") as mock_upsert,
+        ):
+
+backend\tests\test_agent_db_and_guardrails.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\unittest\mock.py:1451: in __enter__
+    self.target = self.getter()
+                  ^^^^^^^^^^^^^
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\pkgutil.py:513: in resolve_name
+    mod = importlib.import_module(modname)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\importlib\__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'psycopg', import_ = <function _gcd_import at 0x00000260EF1480E0>
+
+>   ???
+E   ModuleNotFoundError: No module named 'psycopg'
+
+<frozen importlib._bootstrap>:1324: ModuleNotFoundError
+__________________ test_provision_sqlite_and_query_database ___________________
+
+    @pytest.mark.asyncio
+    async def test_provision_sqlite_and_query_database() -> None:
+>       sqlite_res = SandboxExecutionResult(
+            status="completed",
+            stdout='{"columns": ["name"], "rows": [["user"]]}',
+            stderr="",
+            exit_code=0,
+            execution_duration_ms=15.0,
+        )
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for SandboxExecutionResult
+E       execution_time_ms
+E         Field required [type=missing, input_value={'status': 'completed', '...tion_duration_ms': 15.0}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+backend\tests\test_agent_db_and_guardrails.py:104: ValidationError
+__________________ test_drizzle_kit_deterministic_execution ___________________
+
+    @pytest.mark.asyncio
+    async def test_drizzle_kit_deterministic_execution() -> None:
+>       ok_res = SandboxExecutionResult(status="completed", stdout="Changes applied", stderr="", exit_code=0, execution_duration_ms=20.0)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for SandboxExecutionResult
+E       execution_time_ms
+E         Field required [type=missing, input_value={'status': 'completed', '...tion_duration_ms': 20.0}, input_type=dict]
+E           For further information visit https://errors.pydantic.dev/2.13/v/missing
+
+backend\tests\test_agent_db_and_guardrails.py:164: ValidationError
+=========================== short test summary info ===========================
+FAILED backend\tests\test_agent_db_and_guardrails.py::test_provision_postgres_db_idempotent_and_masked_env
+FAILED backend\tests\test_agent_db_and_guardrails.py::test_provision_sqlite_and_query_database
+FAILED backend\tests\test_agent_db_and_guardrails.py::test_drizzle_kit_deterministic_execution
+========================= 3 failed, 3 passed in 1.62s =========================

@@ -69,6 +69,24 @@ services:
       retries: 5
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: buddhi-postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-buddhi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme-postgres-password}
+      POSTGRES_DB: ${POSTGRES_ADMIN_DB:-postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-buddhi} -d ${POSTGRES_ADMIN_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   backend:
     image: buddhilive/ai-studio-service:${AI_STUDIO_VERSION:-latest}
     build:
@@ -92,6 +110,16 @@ services:
       RUSTFS_ENDPOINT_URL: ${RUSTFS_ENDPOINT_URL:-http://rustfs:9000}
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-buddhi-rustfs}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-changeme-rustfs-secret-key}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-buddhi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme-postgres-password}
+      POSTGRES_ADMIN_DB: ${POSTGRES_ADMIN_DB:-postgres}
+      POSTGRES_SANDBOX_HOST: ${POSTGRES_SANDBOX_HOST:-postgres}
+      POSTGRES_URL: ${POSTGRES_URL:-}
+      SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-buddhilive/vibe-sandbox:latest}
+      SANDBOX_DEFAULT_MEMORY_MB: ${SANDBOX_DEFAULT_MEMORY_MB:-2048}
+      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://backend:8000/v1}
     depends_on:
       searxng:
         condition: service_healthy
@@ -100,6 +128,8 @@ services:
       crawl4ai:
         condition: service_healthy
       rustfs:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
 
@@ -118,4 +148,5 @@ services:
 
 volumes:
   rustfs-data:
+  postgres-data:
 

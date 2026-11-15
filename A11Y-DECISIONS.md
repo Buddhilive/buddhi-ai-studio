@@ -52,3 +52,10 @@
 - **Form Controls & Confirmation Modals**: Calibration toggles use Radix `Switch` bound via `useId()` and `<Label htmlFor={...}>`. Numeric bounds (`max_candidates`, `probe_max_steps`) use native `<Input type="number">` with `min`/`max` constraints. Destructive Reset/Rollback actions require confirmation via Radix `Dialog` with focus trapping and `Escape` dismissal.
 - **Disclosures & Semantic Tables**: The 8-component overlay inspector uses native `<button aria-expanded aria-controls>` disclosures. Snapshot history and Level 2 `EXPERIENCE` entries use semantic `<table>`, `<caption>`, `<th scope="col">`, and `<th scope="row">` inside `tabIndex={0}` horizontal scroll containers.
 - **Non-Reliance on Color & Live Status**: `HarnessCalibrationCard` pairs role icons (`aria-hidden="true"`) with explicit textual tags (`[PROPOSE]`, `[PROBE]`, `[COMPOSE]`, `[DISTILL]`, `[GUARDRAIL BLOCKED]`) and `aria-busy={isRunning}` without stealing focus. `Calibrate Harness` toggle in `ChatInterface` includes `aria-pressed={harnessCalibrate}`.
+
+## 9. Next.js Vibe-Coding Golden Starter & Stack Tool Telemetry (`012-optimize-buddhiai-coding`)
+- **Golden Starter Shell (`sandbox/vibe-starter/`)**:
+  - `src/app/layout.tsx` provides a keyboard-accessible skip link (`#main-content`), `<main id="main-content" tabIndex={-1}>`, and `DESIGN.md` OKLCH light/dark CSS tokens in `src/app/globals.css` with `:focus-visible` outlines and `prefers-reduced-motion` guards.
+  - Pre-installed `shadcn/ui` primitives (`Dialog`, `Tabs`, `Table`, `Input`, `Label`, `Button`, `Alert`) use `@base-ui/react` / native HTML semantics, explicit `aria-label` on icon-only close buttons, and `role="alert"` on alert banners.
+- **Studio ToolCard Category Badges (`src/components/ai-elements/tool.tsx`)**:
+  - Category icons (`SearchIcon`, `GlobeIcon`, `DatabaseIcon`, `LayersIcon`, `ShieldCheckIcon`, `BookOpenIcon`) are marked `aria-hidden="true"` and paired with visible textual `Badge` labels (`SearXNG`, `Crawl4AI`, `Database`, `Next.js Stack`, `BetterAuth`, `Skill`) so status and category never rely solely on color or iconography.

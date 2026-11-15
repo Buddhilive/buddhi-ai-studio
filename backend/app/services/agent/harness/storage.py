@@ -19,6 +19,7 @@ from app.services.agent.harness.models import (
     HarnessComponents,
     HarnessOverlay,
     ProbeResult,
+    ProvisionedDatabase,
 )
 from app.services.agent.harness.validator import sanitize_experience_text, validate_workspace_id
 
@@ -155,6 +156,26 @@ class HarnessStorageService:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_probe_calibration "
             "ON harness_probe_results (calibration_id, candidate_id)"
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS provisioned_databases (
+                workspace_id VARCHAR PRIMARY KEY,
+                db_name VARCHAR NOT NULL UNIQUE,
+                role_name VARCHAR NOT NULL DEFAULT '',
+                dialect VARCHAR NOT NULL CHECK (dialect IN ('postgresql', 'sqlite')),
+                connection_env_key VARCHAR NOT NULL DEFAULT 'DATABASE_URL',
+                masked_dsn VARCHAR NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'active',
+                last_verified_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_prov_db_dialect_status "
+            "ON provisioned_databases (dialect, status, created_at DESC)"
         )
 
     def _workspace_dir(self, workspace_id: str) -> Path:
@@ -605,6 +626,70 @@ class HarnessStorageService:
             finally:
                 if not self._is_in_memory:
                     conn.close()
+
+    def upsert_provisioned_database(self, record: ProvisionedDatabase) -> ProvisionedDatabase:
+        """Persist or update per-workspace provisioned database metadata."""
+        if not validate_workspace_id(record.workspace_id):
+            raise ValueError(f"Invalid workspace_id: {record.workspace_id!r}")
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO provisioned_databases
+                    (workspace_id, db_name, role_name, dialect, connection_env_key,
+                     masked_dsn, status, last_verified_at, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.workspace_id,
+                        record.db_name,
+                        record.role_name,
+                        record.dialect,
+                        record.connection_env_key,
+                        record.masked_dsn,
+                        record.status,
+                        record.last_verified_at,
+                        record.created_at,
+                    ),
+                )
+            finally:
+                if not self._is_in_memory:
+                    conn.close()
+        return record
+
+    def get_provisioned_database(self, workspace_id: str) -> ProvisionedDatabase | None:
+        """Retrieve provisioned database metadata for a workspace."""
+        if not validate_workspace_id(workspace_id):
+            return None
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                row = conn.execute(
+                    """
+                    SELECT workspace_id, db_name, role_name, dialect, connection_env_key,
+                           masked_dsn, status, last_verified_at, created_at
+                    FROM provisioned_databases
+                    WHERE workspace_id = ?
+                    """,
+                    (workspace_id,),
+                ).fetchone()
+            finally:
+                if not self._is_in_memory:
+                    conn.close()
+        if not row:
+            return None
+        return ProvisionedDatabase(
+            workspace_id=row[0],
+            db_name=row[1],
+            role_name=row[2],
+            dialect=row[3],
+            connection_env_key=row[4],
+            masked_dsn=row[5],
+            status=row[6],
+            last_verified_at=row[7].isoformat() if hasattr(row[7], "isoformat") else row[7],
+            created_at=row[8].isoformat() if hasattr(row[8], "isoformat") else str(row[8]),
+        )
 
 
 harness_storage_service = HarnessStorageService()

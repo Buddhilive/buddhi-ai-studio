@@ -1,0 +1,317 @@
+ WARN  Issue while reading "C:\Users\Buddhi\.npmrc". EPERM: operation not permitted, open 'C:\Users\Buddhi\.npmrc'
+
+> buddhi-ai-studio@0.2.0 lint C:\DevDojo\Buddhi\buddhi-ai-studio
+> eslint
+
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\app\crawler\page.tsx
+  30:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\app\crawler\page.tsx:30:5
+  28 |
+  29 |   React.useEffect(() => {
+> 30 |     fetchHealth();
+     |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  31 |   }, [fetchHealth]);
+  32 |
+  33 |   const handleCrawl = async (config: CrawlerConfig) => {  react-hooks/set-state-in-effect
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\app\sandbox\page.tsx
+   4:10  warning  'BoxIcon' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+  62:5   error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\app\sandbox\page.tsx:62:5
+  60 |
+  61 |   React.useEffect(() => {
+> 62 |     fetchHealth();
+     |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  63 |   }, [fetchHealth]);
+  64 |
+  65 |   const handleRun = async () => {  react-hooks/set-state-in-effect
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\app\settings\page.tsx
+  153:10  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\app\settings\page.tsx:153:10
+  151 |
+  152 |   useEffect(() => {
+> 153 |     void refreshAll();
+      |          ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  154 |   }, [refreshAll]);
+  155 |
+  156 |   const handleSaveToken = useCallback(async () => {  react-hooks/set-state-in-effect
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\app\tools\site-crawler\page.tsx
+  102:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\app\tools\site-crawler\page.tsx:102:5
+  100 |
+  101 |   React.useEffect(() => {
+> 102 |     fetchHealth();
+      |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  103 |     fetchBuckets();
+  104 |
+  105 |     // Check for reattachment from localStorage  react-hooks/set-state-in-effect
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\app\tools\site-crawler\projects\[slug]\page.tsx
+  11:3  warning  'DownloadIcon' is defined but never used  @typescript-eslint/no-unused-vars
+  15:3  warning  'LayersIcon' is defined but never used    @typescript-eslint/no-unused-vars
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\attachments.tsx
+   94:5  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  102:5  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  378:3  warning  'openDelay' is assigned a value but never used                                                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  379:3  warning  'closeDelay' is assigned a value but never used                                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\code-block.tsx
+  398:5  error  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\code-block.tsx:398:5
+  396 |   // Invalidate stale async tokens synchronously during render
+  397 |   if (
+> 398 |     asyncKeyRef.current.code !== code ||
+      |     ^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  399 |     asyncKeyRef.current.language !== language
+  400 |   ) {
+  401 |     asyncKeyRef.current = { code, language };  react-hooks/refs
+  399:5  error  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\code-block.tsx:399:5
+  397 |   if (
+  398 |     asyncKeyRef.current.code !== code ||
+> 399 |     asyncKeyRef.current.language !== language
+      |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot access ref value during render
+  400 |   ) {
+  401 |     asyncKeyRef.current = { code, language };
+  402 |     setAsyncTokens(null);                                   react-hooks/refs
+  401:5  error  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\code-block.tsx:401:5
+  399 |     asyncKeyRef.current.language !== language
+  400 |   ) {
+> 401 |     asyncKeyRef.current = { code, language };
+      |     ^^^^^^^^^^^^^^^^^^^ Cannot update ref during render
+  402 |     setAsyncTokens(null);
+  403 |   }
+  404 |                                                                                              react-hooks/refs
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\model-selector.tsx
+  181:3  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\prompt-input.tsx
+   453:26  error    Unexpected any. Specify a different type         @typescript-eslint/no-explicit-any
+   865:34  warning  '_id' is defined but never used                  @typescript-eslint/no-unused-vars
+  1241:22  error    Unexpected any. Specify a different type         @typescript-eslint/no-explicit-any
+  1320:3   warning  'openDelay' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  1321:3   warning  'closeDelay' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\shimmer.tsx
+  51:6  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\shimmer.tsx:51:6
+  49 |
+  50 |   return (
+> 51 |     <MotionComponent
+     |      ^^^^^^^^^^^^^^^ This component is created during render
+  52 |       animate={{ backgroundPosition: "0% center" }}
+  53 |       className={cn(
+  54 |         "relative inline-block bg-[length:250%_100%,auto] bg-clip-text text-transparent",
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\shimmer.tsx:41:27
+  39 |   spread = 2,
+  40 | }: TextShimmerProps) => {
+> 41 |   const MotionComponent = getMotionComponent(
+     |                           ^^^^^^^^^^^^^^^^^^^
+> 42 |     Component as keyof JSX.IntrinsicElements
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 43 |   );
+     | ^^^^ The component is created during render here
+  44 |
+  45 |   const dynamicSpread = useMemo(
+  46 |     () => (children?.length ?? 0) * spread,  react-hooks/static-components
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\speech-input.tsx
+  112:3  error  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\speech-input.tsx:112:3
+  110 |
+  111 |   // Keep refs in sync
+> 112 |   onTranscriptionChangeRef.current = onTranscriptionChange;
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot update ref during render
+  113 |   onAudioRecordedRef.current = onAudioRecorded;
+  114 |
+  115 |   // Initialize Speech Recognition when mode is speech-recognition                                                                                                                                                                                                                                                                                                                                           react-hooks/refs
+  113:3  error  Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\speech-input.tsx:113:3
+  111 |   // Keep refs in sync
+  112 |   onTranscriptionChangeRef.current = onTranscriptionChange;
+> 113 |   onAudioRecordedRef.current = onAudioRecorded;
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^ Cannot update ref during render
+  114 |
+  115 |   // Initialize Speech Recognition when mode is speech-recognition
+  116 |   useEffect(() => {                                                                                                                                                                                                                                                                                                                             react-hooks/refs
+  167:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\ai-elements\speech-input.tsx:167:5
+  165 |
+  166 |     recognitionRef.current = speechRecognition;
+> 167 |     setIsRecognitionReady(true);
+      |     ^^^^^^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  168 |
+  169 |     return () => {
+  170 |       speechRecognition.removeEventListener("start", handleStart);  react-hooks/set-state-in-effect
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\app-sidebar.tsx
+  7:10  warning  'NavProjects' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\crawler\markdown-viewer.tsx
+   6:41  warning  'CardTitle' is defined but never used  @typescript-eslint/no-unused-vars
+  16:57  warning  'url' is defined but never used        @typescript-eslint/no-unused-vars
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\sandbox\session-manager.tsx
+  36:25  warning  'setSelectedImage' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\settings\rlm-settings.tsx
+  24:10  warning  'CpuIcon' is defined but never used               @typescript-eslint/no-unused-vars
+  59:9   warning  'thresholdId' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\site-crawler\discovery-table.tsx
+  4:10  warning  'CheckIcon' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\components\site-crawler\projects-list.tsx
+  8:3  warning  'DownloadIcon' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\hooks\use-analytics-event-detail.ts
+  37:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\hooks\use-analytics-event-detail.ts:37:5
+  35 |
+  36 |   useEffect(() => {
+> 37 |     setEvent(null);
+     |     ^^^^^^^^ Avoid calling setState() directly within an effect
+  38 |     if (requestId) void refetch();
+  39 |     // eslint-disable-next-line react-hooks/exhaustive-deps
+  40 |   }, [requestId]);  react-hooks/set-state-in-effect
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\hooks\use-analytics-events.ts
+  49:5   error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\hooks\use-analytics-events.ts:49:5
+  47 |
+  48 |   useEffect(() => {
+> 49 |     setOffset(0);
+     |     ^^^^^^^^^ Avoid calling setState() directly within an effect
+  50 |   }, [start, end, status, model, search]);
+  51 |
+  52 |   const refetch = useCallback(async () => {  react-hooks/set-state-in-effect
+  79:10  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\hooks\use-analytics-events.ts:79:10
+  77 |
+  78 |   useEffect(() => {
+> 79 |     void refetch();
+     |          ^^^^^^^ Avoid calling setState() directly within an effect
+  80 |   }, [refetch]);
+  81 |
+  82 |   const nextPage = useCallback(() => {                           react-hooks/set-state-in-effect
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\hooks\use-analytics-summary.ts
+  75:10  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\hooks\use-analytics-summary.ts:75:10
+  73 |
+  74 |   useEffect(() => {
+> 75 |     void refetch();
+     |          ^^^^^^^ Avoid calling setState() directly within an effect
+  76 |   }, [refetch]);
+  77 |
+  78 |   return { summary, timeseries, isLoading, error, refetch };  react-hooks/set-state-in-effect
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\hooks\use-mobile.ts
+  14:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\DevDojo\Buddhi\buddhi-ai-studio\src\hooks\use-mobile.ts:14:5
+  12 |     }
+  13 |     mql.addEventListener("change", onChange)
+> 14 |     setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+     |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  15 |     return () => mql.removeEventListener("change", onChange)
+  16 |   }, [])
+  17 |  react-hooks/set-state-in-effect
+
+✖ 37 problems (18 errors, 19 warnings)
+
+ ELIFECYCLE  Command failed with exit code 1.

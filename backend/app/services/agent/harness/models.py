@@ -128,3 +128,61 @@ class CalibrationReport(BaseModel):
     rlm_used: bool = False
     probes: list[ProbeResult] = Field(default_factory=list)
     created_at: str = Field(default_factory=_utc_now_iso)
+
+
+class VibeStackConfig(BaseModel):
+    """Canonical locked Next.js Vibe-Coding Stack configuration for an agent run."""
+
+    framework: Literal["nextjs-16-app-router"] = "nextjs-16-app-router"
+    styling: Literal["tailwindcss-v4"] = "tailwindcss-v4"
+    components: Literal["shadcn-ui"] = "shadcn-ui"
+    orm: Literal["drizzle-orm"] = "drizzle-orm"
+    db_dialect: Literal["postgresql", "sqlite"] = "postgresql"
+    database_url: str = ""
+    auth_enabled: bool = True
+    ai_sdk_enabled: bool = True
+    local_llm_base_url: str = "http://backend:8000/v1"
+
+
+class ProvisionedDatabase(BaseModel):
+    """Metadata for a per-workspace provisioned Postgres or SQLite database."""
+
+    workspace_id: str
+    db_name: str
+    role_name: str = ""
+    dialect: Literal["postgresql", "sqlite"] = "postgresql"
+    connection_env_key: str = "DATABASE_URL"
+    masked_dsn: str = ""
+    status: Literal["active", "fallback_sqlite", "error"] = "active"
+    last_verified_at: str | None = None
+    created_at: str = Field(default_factory=_utc_now_iso)
+
+
+VIBE_STACK_SKILL_SUMMARIES: dict[str, str] = {
+    "nextjs-app-router": "Next.js 16+ App Router, TypeScript strict mode, React 19 RSC, Server Actions, async params/cookies/headers, /_next/mcp diagnostics.",
+    "tailwindcss-v4": "Tailwind CSS v4 CSS-first @import 'tailwindcss', @theme inline tokens, DESIGN.md OKLCH colors, dark mode, responsive mobile-first layout.",
+    "shadcn-ui": "shadcn/ui registry components, accessible Radix/Base primitives, form/dialog/table patterns, npx shadcn@latest add.",
+    "drizzle-orm": "Drizzle ORM pg-core & sqlite-core schemas, relations, prepared queries, drizzle.config.ts, and drizzle-kit push/generate/migrate.",
+    "database-postgres-sqlite": "Per-workspace Postgres provisioning via provision_postgres_db, SQLite local.db fallback, and query_database verification.",
+    "better-auth": "BetterAuth server config with drizzleAdapter(db, { provider }), /api/auth/[...all]/route.ts, and createAuthClient React hooks.",
+    "vercel-ai-sdk": "Vercel AI SDK v7 streamText, generateText, Output.object with Zod, useChat, @ai-sdk/mcp, and local Buddhi LLM provider.",
+}
+
+
+def default_vibe_harness_components() -> HarnessComponents:
+    """Return the default Harness2 scaffolding locked to the Next.js Vibe-Coding Stack."""
+    return HarnessComponents(
+        system_prompt=(
+            "Locked Stack: Next.js 16+ App Router (TypeScript), Tailwind CSS v4 (@theme OKLCH), "
+            "shadcn/ui, Drizzle ORM, PostgreSQL (default) or SQLite, BetterAuth, and Vercel AI SDK."
+        ),
+        guardrails=(
+            "Never create pages/ or src/pages/ routes, tailwind.config.js v3 files, or install "
+            "competing ORMs/auth/UI libs (prisma, typeorm, next-auth, mui, bootstrap)."
+        ),
+        tool_guidance=(
+            "Use search_web and crawl_url for live docs; provision_postgres_db before Drizzle push; "
+            "load_skill(skill_name) for detailed framework runbooks; nextjs_devtools for typecheck."
+        ),
+        skills=dict(VIBE_STACK_SKILL_SUMMARIES),
+    )

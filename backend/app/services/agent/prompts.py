@@ -3,15 +3,28 @@ from __future__ import annotations
 from typing import Any
 from app.schemas.agent import PlanStep
 from app.schemas.chat import ChatMessage
+from app.services.agent.skill_loader import select_skills_for_task
 from app.services.agent.state import Observation
 from app.services.agent.tools import AGENT_TOOL_DEFINITIONS
 from app.services.inference_service import _format_tools_declaration
 
 
 SYSTEM_HARNESS_PROMPT = (
-    "You are BuddhiAI Studio's Autonomous Software Engineer.\n"
+    "You are BuddhiAI Studio's Autonomous Vibe-Coding Software Engineer.\n"
     "You operate inside a deterministic LangGraph state machine with full OpenSandbox isolation.\n"
-    "All file modifications and command executions must be performed via tools in the sandbox.\n"
+    "All file modifications and command executions must be performed via tools in the sandbox.\n\n"
+    "### LOCKED NEXT.JS VIBE-CODING STACK (MANDATORY)\n"
+    "Every application you build MUST use this exact stack (no Pages Router, Prisma, NextAuth, MUI, or Bootstrap):\n"
+    "1. **Framework**: Next.js 16+ App Router (`src/app/`), TypeScript strict mode, React 19 RSC & Server Actions.\n"
+    "2. **Styling**: Tailwind CSS v4 (`@import \"tailwindcss\";` + `@theme inline` in `src/app/globals.css`, `DESIGN.md` OKLCH tokens).\n"
+    "3. **UI Components**: `shadcn/ui` (`@/components/ui/*`, Radix/Base primitives, `lucide-react`, WCAG 2.2 AA accessible).\n"
+    "4. **ORM & Database**: Drizzle ORM (`drizzle-orm`, `drizzle-kit`) with PostgreSQL by default (`provision_postgres_db`) or SQLite (`DB_DIALECT=sqlite`).\n"
+    "5. **Authentication**: BetterAuth (`better-auth` + `drizzleAdapter` at `/api/auth/[...all]`).\n"
+    "6. **AI Features**: Vercel AI SDK (`ai`, `@ai-sdk/react`, `@ai-sdk/mcp`, `@ai-sdk/openai-compatible` pointed at `LOCAL_LLM_BASE_URL`).\n\n"
+    "### LIVE TOOLS & SKILLS\n"
+    "- Use `search_web` (SearXNG) and `crawl_url` / `crawl_page_content` (Crawl4AI) for live documentation.\n"
+    "- Use `load_skill(skill_name)` for full runbooks (`nextjs-app-router`, `tailwindcss-v4`, `shadcn-ui`, `drizzle-orm`, `database-postgres-sqlite`, `better-auth`, `vercel-ai-sdk`).\n"
+    "- Use `provision_postgres_db`, `query_database`, `drizzle_kit`, `shadcn_registry`, `better_auth_cli`, and `nextjs_devtools`.\n"
 )
 
 
@@ -59,16 +72,21 @@ def format_harness_overlay_block(
     return ("\n\n" + "\n\n".join(sections) + "\n") if sections else ""
 
 
+def _extract_task_text(user_messages: list[ChatMessage]) -> str:
+    return " ".join(str(m.content) for m in user_messages if getattr(m, "content", None))
+
+
 def build_analyze_messages(
     user_messages: list[ChatMessage],
     harness_overlay: dict[str, Any] | None = None,
     harness_experiences: list[dict[str, Any]] | None = None,
 ) -> list[ChatMessage]:
     overlay_block = format_harness_overlay_block(harness_overlay, harness_experiences)
+    skills_block = select_skills_for_task(_extract_task_text(user_messages))
     system_msg = ChatMessage(
         role="system",
         content=(
-            f"{SYSTEM_HARNESS_PROMPT}{overlay_block}\n"
+            f"{SYSTEM_HARNESS_PROMPT}{overlay_block}\n{skills_block}\n\n"
             "PHASE: ANALYZE\n"
             "Carefully analyze the user's request. Identify the core objective, required files, dependencies, "
             "and potential pitfalls. Be concise and technical."
@@ -84,10 +102,11 @@ def build_plan_messages(
     harness_experiences: list[dict[str, Any]] | None = None,
 ) -> list[ChatMessage]:
     overlay_block = format_harness_overlay_block(harness_overlay, harness_experiences)
+    skills_block = select_skills_for_task(f"{_extract_task_text(user_messages)} {analysis}")
     system_msg = ChatMessage(
         role="system",
         content=(
-            f"{SYSTEM_HARNESS_PROMPT}{overlay_block}\n"
+            f"{SYSTEM_HARNESS_PROMPT}{overlay_block}\n{skills_block}\n\n"
             "PHASE: PLAN\n"
             f"Based on the analysis:\n{analysis}\n\n"
             "Break down the implementation into clear, numbered, sequential steps.\n"
@@ -110,8 +129,8 @@ def build_act_messages(
 ) -> list[ChatMessage]:
     tools_decl = _format_tools_declaration(AGENT_TOOL_DEFINITIONS)
     overlay_block = format_harness_overlay_block(harness_overlay, harness_experiences)
-
     plan_text = "\n".join(f"- [{s.status.upper()}] {s.title}" for s in plan) if plan else "No plan established."
+    skills_block = select_skills_for_task(f"{_extract_task_text(user_messages)} {plan_text}")
 
     recent_obs = observations[-max_recent_observations:] if observations else []
     obs_text_parts = []
@@ -124,7 +143,7 @@ def build_act_messages(
     obs_text = "\n---\n".join(obs_text_parts) if obs_text_parts else "No previous tool outputs."
 
     instructions = (
-        f"{SYSTEM_HARNESS_PROMPT}{overlay_block}\n"
+        f"{SYSTEM_HARNESS_PROMPT}{overlay_block}\n{skills_block}\n\n"
         "PHASE: ACT\n"
         f"Available Tools:\n{tools_decl}\n\n"
         f"Plan:\n{plan_text}\n\n"
@@ -151,7 +170,11 @@ def build_review_messages(
         f"{SYSTEM_HARNESS_PROMPT}\n"
         "PHASE: REVIEW\n"
         f"Recent tool outcomes:\n{obs_summary}\n\n"
-        "Determine if the user objective has been fully satisfied and verified.\n"
+        "Verify ALL of the following before returning `VERDICT: pass`:\n"
+        "1. Locked Stack Compliance: Next.js App Router (`src/app/`), Tailwind v4 `@theme`, `shadcn/ui`, Drizzle ORM, BetterAuth, Vercel AI SDK.\n"
+        "2. Typecheck & Build: `nextjs_devtools` (`tsc --noEmit`) passed with exit code 0.\n"
+        "3. Database Sync: If persistence is used, `provision_postgres_db` and `drizzle_kit` (`push`/`migrate`) succeeded.\n"
+        "4. Accessibility (WCAG 2.2 AA): Semantic landmarks, explicit `<Label htmlFor>` bindings, keyboard focus rings, and `DESIGN.md` OKLCH contrast tokens.\n\n"
         "You MUST conclude your review with exactly one of the following lines on its own line:\n"
         "VERDICT: pass\n"
         "VERDICT: retry\n"

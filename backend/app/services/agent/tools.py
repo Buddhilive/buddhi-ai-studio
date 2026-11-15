@@ -12,6 +12,10 @@ from typing import Any, Literal, Tuple
 from app.core.config import settings
 from app.schemas.chat import FunctionDefinition, ToolDefinition
 from app.schemas.sandbox import SandboxExecutionRequest, SandboxSessionCreateRequest
+from app.services.agent.redaction import redact_text
+from app.services.agent.skill_loader import LOAD_SKILL_TOOL_DEFINITION, execute_load_skill
+from app.services.agent.vibe_starter import ensure_vibe_starter_workspace
+from app.services.agent.vibe_tools import VIBE_TOOL_DEFINITIONS, VIBE_TOOL_NAMES, execute_vibe_tool
 from app.services.sandbox_service import sandbox_service
 
 logger = logging.getLogger(__name__)
@@ -19,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ToolGuardrailContext:
+    workspace_id: str = "default"
     is_egm_mode: bool = False
     run_id: str = ""
     egm_phase: str | None = None
@@ -157,6 +162,8 @@ AGENT_TOOL_DEFINITIONS = [
             },
         ),
     ),
+    LOAD_SKILL_TOOL_DEFINITION,
+    *VIBE_TOOL_DEFINITIONS,
 ]
 
 
@@ -182,7 +189,81 @@ async def ensure_sandbox_session(session_id: str | None) -> str:
         memory_limit_mb=settings.sandbox_default_memory_mb,
     )
     new_session = await sandbox_service.create_session(create_req)
+    await ensure_vibe_starter_workspace(new_session.session_id)
     return new_session.session_id
+
+
+_BANNED_VIBE_PACKAGES: frozenset[str] = frozenset({
+    "prisma",
+    "@prisma/client",
+    "typeorm",
+    "sequelize",
+    "mongoose",
+    "next-auth",
+    "@auth/core",
+    "@mui/material",
+    "@chakra-ui/react",
+    "bootstrap",
+    "styled-components",
+    "express",
+    "fastapi",
+    "flask",
+    "django",
+    "vue",
+    "nuxt",
+    "svelte",
+    "vite",
+})
+
+_BANNED_PKG_RE = re.compile(
+    r"\b(?:npm|pnpm|yarn|bun)\s+(?:install|add|i|dlx)\b|\b(?:npx|pip\s+install)\b|\bcreate-(?:vite|react-app)\b",
+    re.IGNORECASE,
+)
+
+
+def check_vibe_stack_guardrail(name: str, args: dict[str, Any]) -> str | None:
+    """Enforce the locked Next.js 16+ Vibe-Coding Stack on writes and commands."""
+    if name == "write_file":
+        raw_path = str(args.get("path") or "").replace("\\", "/").lstrip("./")
+        if raw_path.startswith("pages/") or raw_path.startswith("src/pages/"):
+            return (
+                f"Vibe-Stack Guardrail Violation: Pages Router path '{raw_path}' is blocked. "
+                "Use Next.js App Router under 'src/app/' instead."
+            )
+        if re.fullmatch(r"tailwind\.config\.(?:js|cjs|mjs|ts)", raw_path):
+            return (
+                f"Vibe-Stack Guardrail Violation: Legacy '{raw_path}' is blocked. "
+                "Use Tailwind CSS v4 CSS-first '@import \"tailwindcss\";' and '@theme inline' in 'src/app/globals.css'."
+            )
+        if raw_path == "prisma/schema.prisma":
+            return (
+                "Vibe-Stack Guardrail Violation: Prisma is blocked. "
+                "Use Drizzle ORM ('src/db/schema.pg.ts' / 'src/db/schema.sqlite.ts') instead."
+            )
+        if raw_path == "package.json":
+            try:
+                pkg = json.loads(str(args.get("content") or "{}"))
+            except Exception:
+                return None
+            for section in ("dependencies", "devDependencies"):
+                deps = pkg.get(section)
+                if isinstance(deps, dict):
+                    for dep_name in deps:
+                        if dep_name.lower() in _BANNED_VIBE_PACKAGES:
+                            return (
+                                f"Vibe-Stack Guardrail Violation: Package '{dep_name}' in package.json is blocked. "
+                                "Use the locked stack (Next.js App Router, Tailwind v4, shadcn/ui, Drizzle ORM, BetterAuth, Vercel AI SDK)."
+                            )
+    elif name in ("run_command", "run_python_repl"):
+        cmd = str(args.get("command" if name == "run_command" else "code") or "")
+        if _BANNED_PKG_RE.search(cmd):
+            for banned in _BANNED_VIBE_PACKAGES:
+                if re.search(rf"(?<![\w@/-]){re.escape(banned)}(?![\w-])", cmd, re.IGNORECASE):
+                    return (
+                        f"Vibe-Stack Guardrail Violation: Installing/invoking '{banned}' is blocked. "
+                        "Use the locked stack (drizzle-orm, better-auth, shadcn/ui, tailwindcss, ai)."
+                    )
+    return None
 
 
 async def execute_tool(
@@ -194,7 +275,7 @@ async def execute_tool(
     tool_call_id: str | None = None,
 ) -> tuple[str, str, int, bool]:
     """
-    Execute a tool against the sandbox session.
+    Execute a tool against the sandbox session or integrated service.
     Returns (status, output, exit_code, truncated).
     Status is 'completed' or 'error'.
     """
@@ -205,8 +286,54 @@ async def execute_tool(
             args = {"raw_args": args}
 
     ctx = guardrail_ctx or ToolGuardrailContext()
+    call_id = tool_call_id or f"call_{name}"
 
+    if emitter is not None and hasattr(emitter, "emit_tool_start"):
+        try:
+            await emitter.emit_tool_start(call_id, name, args, node="observe")
+        except Exception:
+            pass
+
+    status, output, exit_code, truncated = await _dispatch_tool(
+        name=name,
+        args=args,
+        session_id=session_id,
+        ctx=ctx,
+        emitter=emitter,
+        tool_call_id=call_id,
+    )
+
+    scrubbed_output = redact_text(output) if output else output
+    if emitter is not None and hasattr(emitter, "emit_tool_end"):
+        try:
+            await emitter.emit_tool_end(
+                tool_call_id=call_id,
+                tool_name=name,
+                status=status,
+                output=scrubbed_output,
+                exit_code=exit_code,
+                truncated=truncated,
+                node="observe",
+            )
+        except Exception:
+            pass
+
+    return status, scrubbed_output, exit_code, truncated
+
+
+async def _dispatch_tool(
+    name: str,
+    args: dict[str, Any],
+    session_id: str,
+    ctx: ToolGuardrailContext,
+    emitter: Any = None,
+    tool_call_id: str | None = None,
+) -> tuple[str, str, int, bool]:
     try:
+        vibe_violation = check_vibe_stack_guardrail(name, args)
+        if vibe_violation:
+            return "error", vibe_violation, 1, False
+
         # Phase 1-4 Guardrail check for mutating commands/REPL
         if ctx.is_egm_mode and not ctx.spec_approved:
             if name in ("run_command", "run_python_repl"):
@@ -377,6 +504,19 @@ async def execute_tool(
         elif name == "finish_rlm_task":
             answer = args.get("final_answer", "")
             return "completed", f"FINAL_ANSWER: {answer}", 0, False
+
+        elif name == "load_skill":
+            return await execute_load_skill(args)
+
+        elif name in VIBE_TOOL_NAMES:
+            return await execute_vibe_tool(
+                name=name,
+                args=args,
+                session_id=session_id,
+                ctx=ctx,
+                emitter=emitter,
+                tool_call_id=tool_call_id,
+            )
 
         else:
             return "error", f"Unknown tool: '{name}'", 1, False

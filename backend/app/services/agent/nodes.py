@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.tool_parser import extract_tool_calls
 from app.schemas.agent import PlanStep
 from app.services.agent.events import AgentEventEmitter
+from app.services.agent.harness.models import default_vibe_harness_components
 from app.services.agent.harness.storage import harness_storage_service
 from app.services.agent.harness.validator import validate_workspace_id
 from app.services.agent.prompts import (
@@ -150,6 +151,8 @@ async def analyze_node(state: AgentState, emitter: AgentEventEmitter | None = No
             loaded_overlay = await harness_storage_service.aget_active_overlay(workspace_id)
             if loaded_overlay is not None:
                 harness_overlay = loaded_overlay.model_dump(mode="json")
+            else:
+                harness_overlay = {"components": default_vibe_harness_components().model_dump(mode="json")}
         if not harness_experiences:
             loaded_exps = await harness_storage_service.aget_active_experiences(workspace_id)
             harness_experiences = [e.model_dump(mode="json") for e in loaded_exps]
@@ -277,6 +280,7 @@ async def observe_node(state: AgentState, emitter: AgentEventEmitter | None = No
     from app.services.agent.tools import ToolGuardrailContext
     spec_contract = state.get("spec_contract") or {}
     guardrail_ctx = ToolGuardrailContext(
+        workspace_id=str(state.get("workspace_id") or "default"),
         is_egm_mode=bool(state.get("is_egm_mode")),
         run_id=str(state.get("run_id") or ""),
         egm_phase=state.get("egm_phase"),

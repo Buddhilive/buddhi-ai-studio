@@ -1,0 +1,164 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.12, pytest-9.1.1, pluggy-1.6.0 -- C:\DevDojo\Buddhi\buddhi-ai-studio\backend\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\DevDojo\Buddhi\buddhi-ai-studio\backend
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 31 items
+
+backend\tests\test_agent_service_tools.py::test_service_tools_registered_in_agent_definitions PASSED [  3%]
+backend\tests\test_agent_service_tools.py::test_execute_search_web_success PASSED [  6%]
+backend\tests\test_agent_service_tools.py::test_execute_crawl_url_and_page_content_success PASSED [  9%]
+backend\tests\test_agent_service_tools.py::test_execute_crawl_batch_urls_caps_and_aggregates PASSED [ 12%]
+backend\tests\test_agent_service_tools.py::test_service_tools_output_truncation_and_emitter_events PASSED [ 16%]
+backend\tests\test_agent_service_tools.py::test_search_and_crawl_offline_fallback PASSED [ 19%]
+backend\tests\test_agent_db_and_guardrails.py::test_guardrail_blocks_pages_router_and_banned_packages PASSED [ 22%]
+backend\tests\test_agent_db_and_guardrails.py::test_provision_postgres_db_identifier_sanitization PASSED [ 25%]
+backend\tests\test_agent_db_and_guardrails.py::test_provision_postgres_db_idempotent_and_masked_env PASSED [ 29%]
+backend\tests\test_agent_db_and_guardrails.py::test_provision_sqlite_and_query_database PASSED [ 32%]
+backend\tests\test_agent_db_and_guardrails.py::test_query_database_postgres_blocks_privileged_and_enforces_workspace PASSED [ 35%]
+backend\tests\test_agent_db_and_guardrails.py::test_drizzle_kit_deterministic_execution PASSED [ 38%]
+backend\tests\test_vibe_stack_skills_and_mcp.py::test_seven_official_skills_exist_and_registered PASSED [ 41%]
+backend\tests\test_vibe_stack_skills_and_mcp.py::test_selective_skill_loading_stays_within_token_budget PASSED [ 45%]
+backend\tests\test_vibe_stack_skills_and_mcp.py::test_load_skill_tool PASSED [ 48%]
+backend\tests\test_vibe_stack_skills_and_mcp.py::test_nextjs_devtools_mcp_and_tsc_fallback PASSED [ 51%]
+backend\tests\test_vibe_stack_skills_and_mcp.py::test_shadcn_registry_and_better_auth_cli PASSED [ 54%]
+backend\tests\test_mcp_search.py::test_mcp_tool_registered PASSED        [ 58%]
+backend\tests\test_mcp_search.py::test_mcp_search_web_tool_execution PASSED [ 61%]
+backend\tests\test_mcp_search.py::test_mcp_search_web_tool_error_handling PASSED [ 64%]
+backend\tests\test_mcp_search.py::test_mcp_mount_exists PASSED           [ 67%]
+backend\tests\test_search.py::test_clean_text PASSED                     [ 70%]
+backend\tests\test_search.py::test_searxng_service_search_success PASSED [ 74%]
+backend\tests\test_search.py::test_searxng_service_empty_query PASSED    [ 77%]
+backend\tests\test_search.py::test_searxng_service_connect_error PASSED  [ 80%]
+backend\tests\test_search.py::test_searxng_service_timeout_error PASSED  [ 83%]
+backend\tests\test_search.py::test_rest_search_endpoints PASSED          [ 87%]
+backend\tests\test_search.py::test_rest_search_unavailable_handling PASSED [ 90%]
+backend\tests\test_search.py::test_health_endpoint_with_search PASSED    [ 93%]
+backend\tests\test_agent_graph.py::test_agent_graph_full_cycle PASSED    [ 96%]
+backend\tests\test_agent_graph.py::test_agent_graph_max_steps_termination FAILED [100%]
+
+================================== FAILURES ===================================
+___________________ test_agent_graph_max_steps_termination ____________________
+
+    def test_agent_graph_max_steps_termination():
+        async def _run():
+            mock_sandbox = create_mock_sandbox()
+    
+            # Engine that always retries to trigger max steps
+            class InfiniteRetryEngine(ScriptedInferenceEngine):
+                async def generate_stream(self, messages, *args, **kwargs):
+                    prompt = " ".join(str(m.content) for m in messages if hasattr(m, "content"))
+                    if "PHASE: ACT" in prompt:
+                        from app.schemas.chat import ChatCompletionChunkDelta
+                        yield ChatCompletionChunkDelta(content='<|tool_call>call:run_command{"command": "python retry.py"}<tool_call|>')
+                    elif "PHASE: REVIEW" in prompt:
+                        from app.schemas.chat import ChatCompletionChunkDelta
+                        yield ChatCompletionChunkDelta(content="Review: Retry needed.\nVERDICT: retry")
+                    else:
+                        async for chunk in super().generate_stream(messages, *args, **kwargs):
+                            yield chunk
+    
+            engine = InfiniteRetryEngine()
+            run_id = f"test_loop_{uuid.uuid4().hex}"
+            emitter = AgentEventEmitter(run_id)
+    
+            initial_state: AgentState = {
+                "run_id": run_id,
+                "messages": [ChatMessage(role="user", content="Loop forever")],
+                "plan": [],
+                "pending_tool_calls": [],
+                "observations": [],
+                "verdict": None,
+                "step": 0,
+                "max_steps": 3,
+                "recent_actions": [],
+                "status": "running",
+                "session_id": "test_sess_1",
+                "final_output": None,
+                "error": None,
+                "is_egm_mode": False,
+                "is_rlm_mode": False,
+            }
+    
+            with patch("app.services.agent.nodes.inference_engine_manager.generate_stream", engine.generate_stream), \
+                 patch("app.services.agent.tools.sandbox_service", mock_sandbox):
+    
+                result = await agent_graph.ainvoke(
+                    initial_state,
+                    config={"configurable": {"emitter": emitter, "thread_id": run_id}},
+                )
+    
+                # Must terminate strictly at max_steps budget (SC-002)
+                assert result["status"] == "max_steps_reached"
+                assert result["step"] >= 3
+    
+>       asyncio.run(_run())
+
+backend\tests\test_agent_graph.py:112: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+backend\tests\test_agent_graph.py:103: in _run
+    result = await agent_graph.ainvoke(
+backend\.venv\Lib\site-packages\langgraph\pregel\main.py:4177: in ainvoke
+    async for chunk in self.astream(
+backend\.venv\Lib\site-packages\langgraph\pregel\main.py:3437: in astream
+    async with AsyncPregelLoop(
+backend\.venv\Lib\site-packages\langgraph\pregel\_loop.py:2197: in __aexit__
+    return await exit_task
+           ^^^^^^^^^^^^^^^
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\contextlib.py:754: in __aexit__
+    raise exc_details[1]
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\contextlib.py:737: in __aexit__
+    cb_suppress = await cb(*exc_details)
+                  ^^^^^^^^^^^^^^^^^^^^^^
+backend\.venv\Lib\site-packages\langgraph\pregel\_executor.py:217: in __aexit__
+    raise exc
+backend\app\services\agent\checkpointer.py:435: in aput_writes
+    await asyncio.to_thread(self.put_writes, config, writes, task_id)
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\concurrent\futures\thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\app\services\agent\checkpointer.py:388: in put_writes
+    self._memory_fallback.put_writes(config, writes, task_id)
+backend\.venv\Lib\site-packages\langgraph\checkpoint\memory\__init__.py:510: in put_writes
+    self.serde.dumps_typed(v),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\.venv\Lib\site-packages\langgraph\checkpoint\serde\jsonplus.py:293: in dumps_typed
+    raise exc
+backend\.venv\Lib\site-packages\langgraph\checkpoint\serde\jsonplus.py:289: in dumps_typed
+    return "msgpack", _msgpack_enc(obj)
+                      ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+data = [{'tool_call_id': 'call_48ef1028a1d5', 'name': 'run_command', 'status': 'error', 'output': "<AsyncMock name='mock.exec...am().stdout' id='2349650837584'>\n<AsyncMock name='mock.execute_in_session_stream().stderr' id='2349655101456'>", ...}]
+
+    def _msgpack_enc(data: Any) -> bytes:
+>       return ormsgpack.packb(data, default=_msgpack_default, option=_option)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Type is not msgpack serializable: AsyncMock
+
+backend\.venv\Lib\site-packages\langgraph\checkpoint\serde\jsonplus.py:886: TypeError
+============================== warnings summary ===============================
+tests/test_agent_graph.py::test_agent_graph_max_steps_termination
+  C:\DevDojo\Buddhi\buddhi-ai-studio\backend\.venv\Lib\site-packages\langgraph\checkpoint\serde\jsonplus.py:886: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    return ormsgpack.packb(data, default=_msgpack_default, option=_option)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend\tests\test_agent_graph.py::test_agent_graph_max_steps_termination
+=================== 1 failed, 30 passed, 1 warning in 6.15s ===================

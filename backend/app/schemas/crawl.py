@@ -24,9 +24,24 @@ def validate_crawl_url(url: str, allow_private: bool = False) -> str:
         raise ValueError("URL must include a valid hostname.")
 
     if not allow_private:
-        # Check direct localhost string
-        if hostname.lower() in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
-            raise ValueError(f"Requests to local address '{hostname}' are blocked for security.")
+        lowered = hostname.lower().rstrip(".")
+        blocked_hosts = {
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            "0.0.0.0",
+            "postgres",
+            "backend",
+            "frontend",
+            "rustfs",
+            "opensandbox",
+            "searxng",
+            "crawl4ai",
+            "host.docker.internal",
+            "metadata.google.internal",
+        }
+        if lowered in blocked_hosts or lowered.endswith(".internal") or lowered.endswith(".local"):
+            raise ValueError(f"Requests to internal/local address '{hostname}' are blocked for security.")
 
         # Check if hostname is an IP address
         try:
@@ -35,8 +50,36 @@ def validate_crawl_url(url: str, allow_private: bool = False) -> str:
         except ValueError:
             is_ip = False
 
-        if is_ip and (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved):
+        if is_ip and (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
             raise ValueError(f"Requests to private/internal IP '{hostname}' are blocked for security.")
+
+        # DNS resolution check to prevent DNS rebinding / internal network SSRF
+        if not is_ip:
+            try:
+                addr_info = socket.getaddrinfo(hostname, None)
+                for info in addr_info:
+                    resolved_ip = ipaddress.ip_address(info[4][0].split("%")[0])
+                    if (
+                        resolved_ip.is_private
+                        or resolved_ip.is_loopback
+                        or resolved_ip.is_link_local
+                        or resolved_ip.is_multicast
+                        or resolved_ip.is_reserved
+                        or resolved_ip.is_unspecified
+                    ):
+                        raise ValueError(
+                            f"Requests resolving to private/internal IP '{resolved_ip}' are blocked for security."
+                        )
+            except socket.gaierror:
+                # Hostname may not resolve from this container; let Crawl4AI handle DNS or fail cleanly.
+                pass
 
 
     return cleaned

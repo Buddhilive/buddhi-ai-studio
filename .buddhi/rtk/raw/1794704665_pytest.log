@@ -1,0 +1,492 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.12, pytest-9.1.1, pluggy-1.6.0 -- C:\DevDojo\Buddhi\buddhi-ai-studio\backend\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\DevDojo\Buddhi\buddhi-ai-studio\backend
+configfile: pyproject.toml
+plugins: anyio-4.14.2, asyncio-1.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 31 items
+
+backend\tests\test_agent_service_tools.py::test_service_tools_registered_in_agent_definitions PASSED [  3%]
+backend\tests\test_agent_service_tools.py::test_execute_search_web_success PASSED [  6%]
+backend\tests\test_agent_service_tools.py::test_execute_crawl_url_and_page_content_success PASSED [  9%]
+backend\tests\test_agent_service_tools.py::test_execute_crawl_batch_urls_caps_and_aggregates PASSED [ 12%]
+backend\tests\test_agent_service_tools.py::test_service_tools_output_truncation_and_emitter_events PASSED [ 16%]
+backend\tests\test_agent_service_tools.py::test_search_and_crawl_offline_fallback PASSED [ 19%]
+backend\tests\test_agent_db_and_guardrails.py::test_guardrail_blocks_pages_router_and_banned_packages PASSED [ 22%]
+backend\tests\test_agent_db_and_guardrails.py::test_provision_postgres_db_identifier_sanitization PASSED [ 25%]
+backend\tests\test_agent_db_and_guardrails.py::test_provision_postgres_db_idempotent_and_masked_env FAILED [ 29%]
+backend\tests\test_agent_db_and_guardrails.py::test_provision_sqlite_and_query_database FAILED [ 32%]
+backend\tests\test_agent_db_and_guardrails.py::test_query_database_postgres_blocks_privileged_and_enforces_workspace FAILED [ 35%]
+backend\tests\test_agent_db_and_guardrails.py::test_drizzle_kit_deterministic_execution PASSED [ 38%]
+backend\tests\test_vibe_stack_skills_and_mcp.py::test_seven_official_skills_exist_and_registered PASSED [ 41%]
+backend\tests\test_vibe_stack_skills_and_mcp.py::test_selective_skill_loading_stays_within_token_budget PASSED [ 45%]
+backend\tests\test_vibe_stack_skills_and_mcp.py::test_load_skill_tool PASSED [ 48%]
+backend\tests\test_vibe_stack_skills_and_mcp.py::test_nextjs_devtools_mcp_and_tsc_fallback PASSED [ 51%]
+backend\tests\test_vibe_stack_skills_and_mcp.py::test_shadcn_registry_and_better_auth_cli PASSED [ 54%]
+backend\tests\test_mcp_search.py::test_mcp_tool_registered PASSED        [ 58%]
+backend\tests\test_mcp_search.py::test_mcp_search_web_tool_execution PASSED [ 61%]
+backend\tests\test_mcp_search.py::test_mcp_search_web_tool_error_handling PASSED [ 64%]
+backend\tests\test_mcp_search.py::test_mcp_mount_exists PASSED           [ 67%]
+backend\tests\test_search.py::test_clean_text PASSED                     [ 70%]
+backend\tests\test_search.py::test_searxng_service_search_success PASSED [ 74%]
+backend\tests\test_search.py::test_searxng_service_empty_query PASSED    [ 77%]
+backend\tests\test_search.py::test_searxng_service_connect_error PASSED  [ 80%]
+backend\tests\test_search.py::test_searxng_service_timeout_error PASSED  [ 83%]
+backend\tests\test_search.py::test_rest_search_endpoints PASSED          [ 87%]
+backend\tests\test_search.py::test_rest_search_unavailable_handling PASSED [ 90%]
+backend\tests\test_search.py::test_health_endpoint_with_search PASSED    [ 93%]
+backend\tests\test_agent_graph.py::test_agent_graph_full_cycle PASSED    [ 96%]
+backend\tests\test_agent_graph.py::test_agent_graph_max_steps_termination FAILED [100%]
+
+================================== FAILURES ===================================
+____________ test_provision_postgres_db_idempotent_and_masked_env _____________
+
+    @pytest.mark.asyncio
+    async def test_provision_postgres_db_idempotent_and_masked_env() -> None:
+        import sys
+        import types
+    
+        mock_cursor = MagicMock()
+        mock_cursor.execute = AsyncMock()
+        mock_cursor.fetchone = AsyncMock(side_effect=[None, None])
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=None)
+    
+        mock_conn = MagicMock()
+        mock_conn.execute = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=None)
+    
+        fake_psycopg = types.ModuleType("psycopg")
+        fake_async_conn = MagicMock()
+        fake_async_conn.connect = AsyncMock(return_value=mock_conn)
+        fake_psycopg.AsyncConnection = fake_async_conn
+    
+        fake_sql = types.ModuleType("psycopg.sql")
+        fake_sql.Identifier = lambda x: x
+        fake_sql.Literal = lambda x: x
+        fake_sql.SQL = lambda s: MagicMock(format=lambda *a: s)
+        fake_psycopg.sql = fake_sql
+    
+        with (
+            patch.dict(sys.modules, {"psycopg": fake_psycopg, "psycopg.sql": fake_sql}),
+            patch("app.services.agent.vibe_tools.sandbox_service.read_session_file", new=AsyncMock(side_effect=FileNotFoundError)),
+            patch("app.services.agent.vibe_tools.sandbox_service.write_session_file", new=AsyncMock(return_value=True)) as mock_write,
+>           patch("app.services.agent.vibe_tools.harness_storage_service.upsert_provisioned_database") as mock_upsert,
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        ):
+
+backend\tests\test_agent_db_and_guardrails.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\unittest\mock.py:1451: in __enter__
+    self.target = self.getter()
+                  ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'app.services.agent.vibe_tools.harness_storage_service'
+
+    def resolve_name(name):
+        """
+        Resolve a name to an object.
+    
+        It is expected that `name` will be a string in one of the following
+        formats, where W is shorthand for a valid Python identifier and dot stands
+        for a literal period in these pseudo-regexes:
+    
+        W(.W)*
+        W(.W)*:(W(.W)*)?
+    
+        The first form is intended for backward compatibility only. It assumes that
+        some part of the dotted name is a package, and the rest is an object
+        somewhere within that package, possibly nested inside other objects.
+        Because the place where the package stops and the object hierarchy starts
+        can't be inferred by inspection, repeated attempts to import must be done
+        with this form.
+    
+        In the second form, the caller makes the division point clear through the
+        provision of a single colon: the dotted name to the left of the colon is a
+        package to be imported, and the dotted name to the right is the object
+        hierarchy within that package. Only one import is needed in this form. If
+        it ends with the colon, then a module object is returned.
+    
+        The function will return an object (which might be a module), or raise one
+        of the following exceptions:
+    
+        ValueError - if `name` isn't in a recognised format
+        ImportError - if an import failed when it shouldn't have
+        AttributeError - if a failure occurred when traversing the object hierarchy
+                         within the imported package to get to the desired object.
+        """
+        global _NAME_PATTERN
+        if _NAME_PATTERN is None:
+            # Lazy import to speedup Python startup time
+            import re
+            dotted_words = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
+            _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
+                                       f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
+                                       re.UNICODE)
+    
+        m = _NAME_PATTERN.match(name)
+        if not m:
+            raise ValueError(f'invalid format: {name!r}')
+        gd = m.groupdict()
+        if gd.get('cln'):
+            # there is a colon - a one-step import is all that's needed
+            mod = importlib.import_module(gd['pkg'])
+            parts = gd.get('obj')
+            parts = parts.split('.') if parts else []
+        else:
+            # no colon - have to iterate to find the package boundary
+            parts = name.split('.')
+            modname = parts.pop(0)
+            # first part *must* be a module/package.
+            mod = importlib.import_module(modname)
+            while parts:
+                p = parts[0]
+                s = f'{modname}.{p}'
+                try:
+                    mod = importlib.import_module(s)
+                    parts.pop(0)
+                    modname = s
+                except ImportError:
+                    break
+        # if we reach this point, mod is the module, already imported, and
+        # parts is the list of parts in the object hierarchy to be traversed, or
+        # an empty list if just the module is wanted.
+        result = mod
+        for p in parts:
+>           result = getattr(result, p)
+                     ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'app.services.agent.vibe_tools' has no attribute 'harness_storage_service'
+
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\pkgutil.py:528: AttributeError
+__________________ test_provision_sqlite_and_query_database ___________________
+
+    @pytest.mark.asyncio
+    async def test_provision_sqlite_and_query_database() -> None:
+        sqlite_res = SandboxExecutionResult(
+            status="completed",
+            stdout='{"columns": ["name"], "rows": [["user"]]}',
+            stderr="",
+            exit_code=0,
+            execution_time_ms=15.0,
+        )
+        with (
+            patch("app.services.agent.vibe_tools.sandbox_service.read_session_file", new=AsyncMock(return_value="")),
+            patch("app.services.agent.vibe_tools.sandbox_service.write_session_file", new=AsyncMock(return_value=True)),
+>           patch("app.services.agent.vibe_tools.harness_storage_service.upsert_provisioned_database"),
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        ):
+
+backend\tests\test_agent_db_and_guardrails.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\unittest\mock.py:1451: in __enter__
+    self.target = self.getter()
+                  ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'app.services.agent.vibe_tools.harness_storage_service'
+
+    def resolve_name(name):
+        """
+        Resolve a name to an object.
+    
+        It is expected that `name` will be a string in one of the following
+        formats, where W is shorthand for a valid Python identifier and dot stands
+        for a literal period in these pseudo-regexes:
+    
+        W(.W)*
+        W(.W)*:(W(.W)*)?
+    
+        The first form is intended for backward compatibility only. It assumes that
+        some part of the dotted name is a package, and the rest is an object
+        somewhere within that package, possibly nested inside other objects.
+        Because the place where the package stops and the object hierarchy starts
+        can't be inferred by inspection, repeated attempts to import must be done
+        with this form.
+    
+        In the second form, the caller makes the division point clear through the
+        provision of a single colon: the dotted name to the left of the colon is a
+        package to be imported, and the dotted name to the right is the object
+        hierarchy within that package. Only one import is needed in this form. If
+        it ends with the colon, then a module object is returned.
+    
+        The function will return an object (which might be a module), or raise one
+        of the following exceptions:
+    
+        ValueError - if `name` isn't in a recognised format
+        ImportError - if an import failed when it shouldn't have
+        AttributeError - if a failure occurred when traversing the object hierarchy
+                         within the imported package to get to the desired object.
+        """
+        global _NAME_PATTERN
+        if _NAME_PATTERN is None:
+            # Lazy import to speedup Python startup time
+            import re
+            dotted_words = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
+            _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
+                                       f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
+                                       re.UNICODE)
+    
+        m = _NAME_PATTERN.match(name)
+        if not m:
+            raise ValueError(f'invalid format: {name!r}')
+        gd = m.groupdict()
+        if gd.get('cln'):
+            # there is a colon - a one-step import is all that's needed
+            mod = importlib.import_module(gd['pkg'])
+            parts = gd.get('obj')
+            parts = parts.split('.') if parts else []
+        else:
+            # no colon - have to iterate to find the package boundary
+            parts = name.split('.')
+            modname = parts.pop(0)
+            # first part *must* be a module/package.
+            mod = importlib.import_module(modname)
+            while parts:
+                p = parts[0]
+                s = f'{modname}.{p}'
+                try:
+                    mod = importlib.import_module(s)
+                    parts.pop(0)
+                    modname = s
+                except ImportError:
+                    break
+        # if we reach this point, mod is the module, already imported, and
+        # parts is the list of parts in the object hierarchy to be traversed, or
+        # an empty list if just the module is wanted.
+        result = mod
+        for p in parts:
+>           result = getattr(result, p)
+                     ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'app.services.agent.vibe_tools' has no attribute 'harness_storage_service'
+
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\pkgutil.py:528: AttributeError
+____ test_query_database_postgres_blocks_privileged_and_enforces_workspace ____
+
+    @pytest.mark.asyncio
+    async def test_query_database_postgres_blocks_privileged_and_enforces_workspace() -> None:
+        status, out, code, _ = await execute_tool(
+            "query_database",
+            {"sql": "SELECT pg_read_file('/etc/passwd')", "dialect": "postgresql"},
+            session_id="sess_1",
+            guardrail_ctx=ToolGuardrailContext(workspace_id="ws_1"),
+        )
+        assert status == "error"
+        assert code == 1
+        assert "Security Guardrail" in out
+    
+>       with patch("app.services.agent.vibe_tools.harness_storage_service.get_provisioned_database", return_value=None):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend\tests\test_agent_db_and_guardrails.py:164: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\unittest\mock.py:1451: in __enter__
+    self.target = self.getter()
+                  ^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'app.services.agent.vibe_tools.harness_storage_service'
+
+    def resolve_name(name):
+        """
+        Resolve a name to an object.
+    
+        It is expected that `name` will be a string in one of the following
+        formats, where W is shorthand for a valid Python identifier and dot stands
+        for a literal period in these pseudo-regexes:
+    
+        W(.W)*
+        W(.W)*:(W(.W)*)?
+    
+        The first form is intended for backward compatibility only. It assumes that
+        some part of the dotted name is a package, and the rest is an object
+        somewhere within that package, possibly nested inside other objects.
+        Because the place where the package stops and the object hierarchy starts
+        can't be inferred by inspection, repeated attempts to import must be done
+        with this form.
+    
+        In the second form, the caller makes the division point clear through the
+        provision of a single colon: the dotted name to the left of the colon is a
+        package to be imported, and the dotted name to the right is the object
+        hierarchy within that package. Only one import is needed in this form. If
+        it ends with the colon, then a module object is returned.
+    
+        The function will return an object (which might be a module), or raise one
+        of the following exceptions:
+    
+        ValueError - if `name` isn't in a recognised format
+        ImportError - if an import failed when it shouldn't have
+        AttributeError - if a failure occurred when traversing the object hierarchy
+                         within the imported package to get to the desired object.
+        """
+        global _NAME_PATTERN
+        if _NAME_PATTERN is None:
+            # Lazy import to speedup Python startup time
+            import re
+            dotted_words = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
+            _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
+                                       f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
+                                       re.UNICODE)
+    
+        m = _NAME_PATTERN.match(name)
+        if not m:
+            raise ValueError(f'invalid format: {name!r}')
+        gd = m.groupdict()
+        if gd.get('cln'):
+            # there is a colon - a one-step import is all that's needed
+            mod = importlib.import_module(gd['pkg'])
+            parts = gd.get('obj')
+            parts = parts.split('.') if parts else []
+        else:
+            # no colon - have to iterate to find the package boundary
+            parts = name.split('.')
+            modname = parts.pop(0)
+            # first part *must* be a module/package.
+            mod = importlib.import_module(modname)
+            while parts:
+                p = parts[0]
+                s = f'{modname}.{p}'
+                try:
+                    mod = importlib.import_module(s)
+                    parts.pop(0)
+                    modname = s
+                except ImportError:
+                    break
+        # if we reach this point, mod is the module, already imported, and
+        # parts is the list of parts in the object hierarchy to be traversed, or
+        # an empty list if just the module is wanted.
+        result = mod
+        for p in parts:
+>           result = getattr(result, p)
+                     ^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'app.services.agent.vibe_tools' has no attribute 'harness_storage_service'
+
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\pkgutil.py:528: AttributeError
+___________________ test_agent_graph_max_steps_termination ____________________
+
+    def test_agent_graph_max_steps_termination():
+        async def _run():
+            mock_sandbox = create_mock_sandbox()
+    
+            # Engine that always retries to trigger max steps
+            class InfiniteRetryEngine(ScriptedInferenceEngine):
+                async def generate_stream(self, messages, *args, **kwargs):
+                    prompt = " ".join(str(m.content) for m in messages if hasattr(m, "content"))
+                    if "PHASE: ACT" in prompt:
+                        from app.schemas.chat import ChatCompletionChunkDelta
+                        yield ChatCompletionChunkDelta(content='<|tool_call>call:run_command{"command": "python retry.py"}<tool_call|>')
+                    elif "PHASE: REVIEW" in prompt:
+                        from app.schemas.chat import ChatCompletionChunkDelta
+                        yield ChatCompletionChunkDelta(content="Review: Retry needed.\nVERDICT: retry")
+                    else:
+                        async for chunk in super().generate_stream(messages, *args, **kwargs):
+                            yield chunk
+    
+            engine = InfiniteRetryEngine()
+            run_id = f"test_loop_{uuid.uuid4().hex}"
+            emitter = AgentEventEmitter(run_id)
+    
+            initial_state: AgentState = {
+                "run_id": run_id,
+                "messages": [ChatMessage(role="user", content="Loop forever")],
+                "plan": [],
+                "pending_tool_calls": [],
+                "observations": [],
+                "verdict": None,
+                "step": 0,
+                "max_steps": 3,
+                "recent_actions": [],
+                "status": "running",
+                "session_id": "test_sess_1",
+                "final_output": None,
+                "error": None,
+                "is_egm_mode": False,
+                "is_rlm_mode": False,
+            }
+    
+            with patch("app.services.agent.nodes.inference_engine_manager.generate_stream", engine.generate_stream), \
+                 patch("app.services.agent.tools.sandbox_service", mock_sandbox):
+    
+                result = await agent_graph.ainvoke(
+                    initial_state,
+                    config={"configurable": {"emitter": emitter, "thread_id": run_id}},
+                )
+    
+                # Must terminate strictly at max_steps budget (SC-002)
+                assert result["status"] == "max_steps_reached"
+                assert result["step"] >= 3
+    
+>       asyncio.run(_run())
+
+backend\tests\test_agent_graph.py:112: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\base_events.py:691: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+backend\tests\test_agent_graph.py:103: in _run
+    result = await agent_graph.ainvoke(
+backend\.venv\Lib\site-packages\langgraph\pregel\main.py:4177: in ainvoke
+    async for chunk in self.astream(
+backend\.venv\Lib\site-packages\langgraph\pregel\main.py:3437: in astream
+    async with AsyncPregelLoop(
+backend\.venv\Lib\site-packages\langgraph\pregel\_loop.py:2197: in __aexit__
+    return await exit_task
+           ^^^^^^^^^^^^^^^
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\contextlib.py:754: in __aexit__
+    raise exc_details[1]
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\contextlib.py:737: in __aexit__
+    cb_suppress = await cb(*exc_details)
+                  ^^^^^^^^^^^^^^^^^^^^^^
+backend\.venv\Lib\site-packages\langgraph\pregel\_executor.py:217: in __aexit__
+    raise exc
+backend\app\services\agent\checkpointer.py:435: in aput_writes
+    await asyncio.to_thread(self.put_writes, config, writes, task_id)
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\Buddhi\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\concurrent\futures\thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\app\services\agent\checkpointer.py:388: in put_writes
+    self._memory_fallback.put_writes(config, writes, task_id)
+backend\.venv\Lib\site-packages\langgraph\checkpoint\memory\__init__.py:510: in put_writes
+    self.serde.dumps_typed(v),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^
+backend\.venv\Lib\site-packages\langgraph\checkpoint\serde\jsonplus.py:293: in dumps_typed
+    raise exc
+backend\.venv\Lib\site-packages\langgraph\checkpoint\serde\jsonplus.py:289: in dumps_typed
+    return "msgpack", _msgpack_enc(obj)
+                      ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+data = [{'tool_call_id': 'call_f6c48e9d5c02', 'name': 'run_command', 'status': 'error', 'output': "<AsyncMock name='mock.exec...am().stdout' id='2162504067856'>\n<AsyncMock name='mock.execute_in_session_stream().stderr' id='2162504073872'>", ...}]
+
+    def _msgpack_enc(data: Any) -> bytes:
+>       return ormsgpack.packb(data, default=_msgpack_default, option=_option)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Type is not msgpack serializable: AsyncMock
+
+backend\.venv\Lib\site-packages\langgraph\checkpoint\serde\jsonplus.py:886: TypeError
+============================== warnings summary ===============================
+tests/test_agent_graph.py::test_agent_graph_max_steps_termination
+  C:\DevDojo\Buddhi\buddhi-ai-studio\backend\.venv\Lib\site-packages\langgraph\checkpoint\serde\jsonplus.py:886: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    return ormsgpack.packb(data, default=_msgpack_default, option=_option)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend\tests\test_agent_db_and_guardrails.py::test_provision_postgres_db_idempotent_and_masked_env
+FAILED backend\tests\test_agent_db_and_guardrails.py::test_provision_sqlite_and_query_database
+FAILED backend\tests\test_agent_db_and_guardrails.py::test_query_database_postgres_blocks_privileged_and_enforces_workspace
+FAILED backend\tests\test_agent_graph.py::test_agent_graph_max_steps_termination
+=================== 4 failed, 27 passed, 1 warning in 6.98s ===================
