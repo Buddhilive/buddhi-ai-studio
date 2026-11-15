@@ -137,3 +137,33 @@ def test_session_rest_endpoints():
         res_del = client.delete("/v1/sandbox/sessions/api-sess-1")
         assert res_del.status_code == 200
         assert res_del.json()["status"] == "terminated"
+
+
+@pytest.mark.asyncio
+async def test_execute_in_session_reads_opensandbox_execution_logs():
+    from opensandbox.models.execd import Execution, ExecutionLogs, OutputMessage
+
+    service = SandboxService()
+    mock_sandbox = MagicMock()
+    mock_sandbox.id = "sess-exec-logs"
+    mock_sandbox.commands.run = AsyncMock(
+        return_value=Execution(
+            exit_code=0,
+            logs=ExecutionLogs(
+                stdout=[OutputMessage(text="hello\n", timestamp=1)],
+                stderr=[OutputMessage(text="warn\n", timestamp=2, is_error=True)],
+            ),
+        )
+    )
+
+    with patch("opensandbox.Sandbox.create", new_callable=AsyncMock, return_value=mock_sandbox):
+        await service.create_session(SandboxSessionCreateRequest())
+        result = await service.execute_in_session(
+            "sess-exec-logs",
+            SandboxExecutionRequest(code="echo hello", language="bash"),
+        )
+
+    assert result.status == "completed"
+    assert result.stdout == "hello\n"
+    assert result.stderr == "warn\n"
+    assert result.exit_code == 0

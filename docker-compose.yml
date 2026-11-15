@@ -27,12 +27,22 @@ services:
     environment:
       OPENSANDBOX_CONFIG: /etc/opensandbox/config.toml
       OPENSANDBOX_SERVER_API_KEY: ${OPENSANDBOX_API_KEY:-changeme-opensandbox-key}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  vibe-sandbox:
+    image: ${SANDBOX_DEFAULT_IMAGE:-buddhilive/vibe-sandbox:latest}
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile.vibe
+    command: ["true"]
+    restart: "no"
 
   crawl4ai:
     image: unclecode/crawl4ai:latest
@@ -131,6 +141,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      vibe-sandbox:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   frontend:

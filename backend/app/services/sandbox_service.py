@@ -11,6 +11,7 @@ import httpx
 from opensandbox import Sandbox
 from opensandbox.config.connection import ConnectionConfig
 from opensandbox.models.execd import RunCommandOpts
+from opensandbox.models.sandboxes import NetworkPolicy
 
 from app.core.config import settings
 from app.schemas.sandbox import (
@@ -47,6 +48,27 @@ class ActiveSession:
         self.last_activity_at = datetime.now(timezone.utc)
 
 
+def _extract_execution_logs(exec_result: Any) -> tuple[list[str], list[str]]:
+    """Extract stdout and stderr text chunks from an OpenSandbox Execution result."""
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    logs = getattr(exec_result, "logs", None)
+    if not logs:
+        return stdout_parts, stderr_parts
+
+    for msg in getattr(logs, "stdout", None) or ():
+        stdout_parts.append(msg.text)
+    for msg in getattr(logs, "stderr", None) or ():
+        stderr_parts.append(msg.text)
+
+    for msg in getattr(logs, "content", None) or ():
+        if getattr(msg, "is_error", False):
+            stderr_parts.append(msg.text)
+        else:
+            stdout_parts.append(msg.text)
+    return stdout_parts, stderr_parts
+
+
 class SandboxService:
     def __init__(self) -> None:
         self._http_client: httpx.AsyncClient | None = None
@@ -62,6 +84,7 @@ class SandboxService:
             domain=domain,
             protocol=protocol,
             api_key=settings.opensandbox_api_key,
+            use_server_proxy=True,
             request_timeout=timedelta(seconds=settings.sandbox_default_timeout_s + 10),
         )
 
@@ -204,15 +227,7 @@ class SandboxService:
             )
 
         elapsed = (time.perf_counter() - start_time) * 1000
-        stdout_parts: list[str] = []
-        stderr_parts: list[str] = []
-
-        if exec_result.logs and exec_result.logs.content: # type: ignore
-            for msg in exec_result.logs.content: # type: ignore
-                if getattr(msg, "is_error", False):
-                    stderr_parts.append(msg.text)
-                else:
-                    stdout_parts.append(msg.text)
+        stdout_parts, stderr_parts = _extract_execution_logs(exec_result)
 
         status_str = "completed" if (exec_result.exit_code == 0) else "error"
         if exec_result.error:
@@ -249,7 +264,7 @@ class SandboxService:
         if resource_limits:
             create_kwargs["resource"] = resource_limits
         if not request.allow_network:
-            create_kwargs["network_policy"] = {"defaultAction": "deny"}
+            create_kwargs["network_policy"] = NetworkPolicy(default_action="deny")
 
         try:
             sandbox = await Sandbox.create(**create_kwargs)
@@ -456,15 +471,7 @@ class SandboxService:
         await _flush_stream("stderr")
 
         elapsed = (time.perf_counter() - start_time) * 1000
-        stdout_parts: list[str] = []
-        stderr_parts: list[str] = []
-
-        if exec_result.logs and exec_result.logs.content:  # type: ignore
-            for msg in exec_result.logs.content:  # type: ignore
-                if getattr(msg, "is_error", False):
-                    stderr_parts.append(msg.text)
-                else:
-                    stdout_parts.append(msg.text)
+        stdout_parts, stderr_parts = _extract_execution_logs(exec_result)
 
         if not handler_saw_output:
             if stdout_parts:

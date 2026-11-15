@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.main import app
 from app.services.build_project_service import BuildProjectService
@@ -112,3 +113,30 @@ def test_build_files_rejects_path_traversal():
 
     res_bad_id = client.get("/v1/build/projects/bad$id/files")
     assert res_bad_id.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_sandbox_create_session_uses_network_policy_model():
+    from opensandbox.models.sandboxes import NetworkPolicy
+
+    from app.schemas.sandbox import SandboxSessionCreateRequest
+    from app.services.sandbox_service import SandboxService
+
+    svc = SandboxService()
+    mock_sandbox = MagicMock()
+    mock_sandbox.id = "sess_np_test"
+
+    with patch("app.services.sandbox_service.Sandbox.create", new=AsyncMock(return_value=mock_sandbox)) as mock_create:
+        res = await svc.create_session(
+            SandboxSessionCreateRequest(
+                runtime_image="buddhilive/vibe-sandbox:latest",
+                timeout_s=60,
+                allow_network=False,
+                purpose="build",
+            )
+        )
+
+    assert res.session_id == "sess_np_test"
+    kwargs = mock_create.await_args.kwargs
+    assert isinstance(kwargs["network_policy"], NetworkPolicy)
+    assert kwargs["network_policy"].default_action == "deny"

@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     # Build Projects (Dashboard & IDE Workspace)
     build_projects_db_path: Path = BACKEND_ROOT / "data" / "build_projects.duckdb"
     build_projects_bucket: str = "build-projects"
-    build_projects_local_dir: Path = BACKEND_ROOT.parent / ".buddhi" / "projects"
+    build_projects_local_dir: Path = BACKEND_ROOT / "data" / "projects"
 
 
 settings = Settings()
