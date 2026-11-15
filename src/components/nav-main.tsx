@@ -44,7 +44,8 @@ export function NavMain({
       <SidebarMenu>
         {items.map((item) => {
           if (!item.items?.length) {
-            const isActive = pathname === item.url
+            const isActive =
+              item.url !== "/" ? pathname.startsWith(item.url) : pathname === "/"
             return (
               <SidebarMenuItem key={item.title}>
                 <SidebarMenuButton

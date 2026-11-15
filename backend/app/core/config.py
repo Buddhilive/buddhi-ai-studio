@@ -146,5 +146,10 @@ class Settings(BaseSettings):
     sandbox_stream_flush_ms: int = 100
     sandbox_max_output_bytes: int = 1_048_576
 
+    # Build Projects (Dashboard & IDE Workspace)
+    build_projects_db_path: Path = BACKEND_ROOT / "data" / "build_projects.duckdb"
+    build_projects_bucket: str = "build-projects"
+    build_projects_local_dir: Path = BACKEND_ROOT.parent / ".buddhi" / "projects"
+
 
 settings = Settings()

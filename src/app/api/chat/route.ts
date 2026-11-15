@@ -15,12 +15,16 @@ export async function POST(req: Request) {
     enableThinking = true,
     egmMode = false,
     harnessCalibrate = false,
+    projectId,
+    sessionId,
   }: {
     messages: UIMessage[];
     model: string;
     enableThinking?: boolean;
     egmMode?: boolean;
     harnessCalibrate?: boolean;
+    projectId?: string;
+    sessionId?: string;
   } = await req.json();
 
   const selectedModel = model || "gemma-4-e4b";
@@ -46,6 +50,8 @@ export async function POST(req: Request) {
             model: selectedModel,
             enable_thinking: Boolean(enableThinking),
             egm_mode: Boolean(egmMode),
+            ...(projectId ? { project_id: projectId, workspace_id: projectId } : {}),
+            ...(sessionId ? { session_id: sessionId } : {}),
             ...(harnessCalibrate ? { harness_mode: "calibrate" } : {}),
           }),
         });

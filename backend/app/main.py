@@ -8,8 +8,9 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.mcp_server import mcp_server
-from app.routers import agent, analytics, chat, crawl, embedding_model, embeddings, health, models, models_v1, sandbox, search, settings as settings_router, site_crawler, storage
+from app.routers import agent, analytics, build, chat, crawl, embedding_model, embeddings, health, models, models_v1, sandbox, search, settings as settings_router, site_crawler, storage
 from app.routers import metrics as metrics_router
+from app.services.build_project_service import build_project_service
 from app.services.crawl_service import crawl_service
 from app.services.embedding_service import embedding_engine_manager
 from app.services.inference_service import inference_engine_manager
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
     await sandbox_service.start()
     await crawl_service.start()
     await storage_service.start()
+    await build_project_service.start()
     await site_crawler_jobs.recover_interrupted()
     yield
     await site_crawler_jobs.shutdown()
@@ -63,6 +65,7 @@ app.include_router(models_v1.router)
 app.include_router(embedding_model.router)
 app.include_router(search.router)
 app.include_router(sandbox.router)
+app.include_router(build.router)
 app.include_router(crawl.router)
 app.include_router(storage.router)
 app.include_router(site_crawler.router)

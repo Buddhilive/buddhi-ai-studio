@@ -398,7 +398,8 @@ async def _handle_provision_postgres_db(
     from app.services.agent.harness.storage import harness_storage_service
 
     workspace_id = str(getattr(ctx, "workspace_id", "default") or "default")
-    dialect = str(args.get("dialect") or "postgresql").lower()
+    default_dialect = getattr(ctx, "db_dialect", None) or "postgresql"
+    dialect = str(args.get("dialect") or default_dialect).lower()
     if dialect not in ("postgresql", "sqlite"):
         return "error", f"Unsupported dialect '{dialect}'. Use 'postgresql' or 'sqlite'.", 1, False
 
@@ -535,7 +536,8 @@ async def _handle_query_database(
         return "error", "Security Guardrail: Privileged Postgres filesystem/COPY PROGRAM functions are blocked.", 1, False
 
     workspace_id = str(getattr(ctx, "workspace_id", "default") or "default")
-    dialect = str(args.get("dialect") or "postgresql").lower()
+    default_dialect = getattr(ctx, "db_dialect", None) or "postgresql"
+    dialect = str(args.get("dialect") or default_dialect).lower()
     params = args.get("params") or []
     read_only = bool(args.get("read_only", True))
 

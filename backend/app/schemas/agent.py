@@ -92,6 +92,7 @@ class AgentRunRequest(BaseModel):
     egm_max_rounds: int | None = None
     spec_path: str | None = None
     workspace_id: str | None = None
+    project_id: str | None = None
     harness_mode: Literal["auto", "calibrate", "off"] | None = None
 
 

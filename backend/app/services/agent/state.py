@@ -61,6 +61,9 @@ class AgentState(TypedDict, total=False):
 
     # Harness2 (Recursive Agent Harnessing) extensions
     workspace_id: str
+    project_id: str | None
+    db_dialect: str | None
+    persistent_session: bool
     harness_mode: Literal["auto", "calibrate", "off"]
     harness_overlay: dict[str, Any] | None
     harness_experiences: list[dict[str, Any]]

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/sidebar"
 import {
   TerminalIcon,
-  TerminalSquareIcon,
+  HammerIcon,
   BotIcon,
   LayoutDashboardIcon,
   ChartColumnIcon,
@@ -68,10 +68,10 @@ export const navData = {
       ],
     },
     {
-      title: "Playground",
-      url: "/chat",
+      title: "Build",
+      url: "/build",
       icon: (
-        <TerminalSquareIcon
+        <HammerIcon
         />
       ),
     },

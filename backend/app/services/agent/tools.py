@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class ToolGuardrailContext:
     workspace_id: str = "default"
+    project_id: str | None = None
+    db_dialect: str | None = None
     is_egm_mode: bool = False
     run_id: str = ""
     egm_phase: str | None = None
@@ -435,6 +437,13 @@ async def _dispatch_tool(
                         )
 
             await sandbox_service.write_session_file(session_id, norm_path, content)
+            if ctx.project_id:
+                try:
+                    from app.services.build_project_service import build_project_service
+
+                    await build_project_service.sync_file_to_storage(ctx.project_id, norm_path, content)
+                except Exception as exc:
+                    logger.warning("Snapshot sync after write_file failed for %s: %s", norm_path, exc)
             return "completed", f"File '{norm_path}' written successfully ({len(content)} bytes).", 0, False
 
         elif name == "read_file":

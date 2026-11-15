@@ -57,10 +57,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useModelCatalog, type ModelCatalogEntry } from "@/hooks/use-model-catalog";
 import Link from "next/link";
 import { AlertTriangleIcon, BrainIcon, CheckIcon, ShieldCheckIcon, SparklesIcon } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useChat } from "@ai-sdk/react";
 import { AgentMessagePart } from "@/components/chat/agent-parts";
+import type { OpenInIdeTarget } from "@/components/build/project-workspace-context";
 import { TrajectoryPanel } from "@/components/trajectory/trajectory-panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { extractTrajectoryEventsFromMessages } from "@/hooks/use-trajectory-stream";
@@ -137,7 +138,25 @@ const ModelItem = ({
     );
 };
 
-export default function ChatInterface() {
+export interface ChatInterfaceProps {
+    projectId?: string;
+    sessionId?: string | null;
+    initialMessages?: UIMessage[];
+    initialPrompt?: string;
+    embedded?: boolean;
+    onOpenInIde?: (target: OpenInIdeTarget) => void;
+    onMessagesChange?: (messages: UIMessage[], status: string) => void;
+}
+
+export default function ChatInterface({
+    projectId,
+    sessionId,
+    initialMessages,
+    initialPrompt,
+    embedded = false,
+    onOpenInIde,
+    onMessagesChange,
+}: ChatInterfaceProps = {}) {
     const { catalog, states } = useModelCatalog();
     const downloadedLlmModels = useMemo(
         () =>
@@ -156,8 +175,9 @@ export default function ChatInterface() {
     const [harnessCalibrate, setHarnessCalibrate] = useState<boolean>(false);
 
     const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
-    const { messages, status, stop, sendMessage, clearError } = useChat({
+    const { messages, status, stop, sendMessage, clearError, setMessages } = useChat({
         transport,
+        messages: initialMessages,
         onError: (err: Error) => {
             toast.error("Couldn't get a response", {
                 description:
@@ -167,6 +187,60 @@ export default function ChatInterface() {
             clearError();
         },
     });
+
+    const hydratedRef = useRef(false);
+    useEffect(() => {
+        if (!hydratedRef.current && initialMessages && initialMessages.length > 0 && messages.length === 0) {
+            hydratedRef.current = true;
+            setMessages(initialMessages);
+        }
+    }, [initialMessages, messages.length, setMessages]);
+
+    const initialPromptSentRef = useRef(false);
+    useEffect(() => {
+        if (
+            !initialPromptSentRef.current &&
+            initialPrompt &&
+            model &&
+            sessionId &&
+            messages.length === 0 &&
+            status === "ready"
+        ) {
+            initialPromptSentRef.current = true;
+            void sendMessage(
+                { text: initialPrompt },
+                {
+                    body: {
+                        model,
+                        enableThinking: showReasoning,
+                        egmMode,
+                        harnessCalibrate,
+                        projectId,
+                        sessionId,
+                    },
+                }
+            );
+        }
+    }, [initialPrompt, model, sessionId, messages.length, status, sendMessage, showReasoning, egmMode, harnessCalibrate, projectId]);
+
+    useEffect(() => {
+        onMessagesChange?.(messages, status);
+    }, [messages, status, onMessagesChange]);
+
+    // Persist chat & trajectory history to backend when a turn settles
+    const prevStatusRef = useRef(status);
+    useEffect(() => {
+        const wasActive = prevStatusRef.current === "streaming" || prevStatusRef.current === "submitted";
+        prevStatusRef.current = status;
+        if (projectId && wasActive && status === "ready" && messages.length > 0) {
+            const traj = extractTrajectoryEventsFromMessages(messages);
+            void fetch(`/api/build/projects/${encodeURIComponent(projectId)}/history`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ messages, trajectory_events: traj }),
+            }).catch(() => {});
+        }
+    }, [projectId, status, messages]);
 
     const selectedModelData = useMemo(
         () => downloadedLlmModels.find((m) => m.id === model),
@@ -184,11 +258,20 @@ export default function ChatInterface() {
 
             void sendMessage(
                 { text: message.text, files: message.files },
-                { body: { model, enableThinking: showReasoning, egmMode, harnessCalibrate } }
+                {
+                    body: {
+                        model,
+                        enableThinking: showReasoning,
+                        egmMode,
+                        harnessCalibrate,
+                        ...(projectId ? { projectId } : {}),
+                        ...(sessionId ? { sessionId } : {}),
+                    },
+                }
             );
             setText("");
         },
-        [sendMessage, model, showReasoning, egmMode, harnessCalibrate]
+        [sendMessage, model, showReasoning, egmMode, harnessCalibrate, projectId, sessionId]
     );
 
     const toggleEgmMode = useCallback(() => {
@@ -237,19 +320,7 @@ export default function ChatInterface() {
         [messages]
     );
 
-    return (
-        <div className="relative flex h-[calc(100vh-80px)] flex-col divide-y overflow-hidden">
-            <Tabs defaultValue="conversation" className="flex min-h-0 flex-1 flex-col">
-                <div className="flex items-center justify-between border-b border-border bg-card px-4 py-1.5">
-                    <TabsList variant="line">
-                        <TabsTrigger value="conversation">Conversation</TabsTrigger>
-                        <TabsTrigger value="trajectory">
-                            Trajectory{trajectoryEvents.length > 0 ? ` (${trajectoryEvents.length})` : ""}
-                        </TabsTrigger>
-                    </TabsList>
-                </div>
-
-                <TabsContent value="conversation" className="flex min-h-0 flex-1 flex-col">
+    const conversationView = (
             <Conversation>
                 <ConversationContent>
                     {messages.map((message: UIMessage) => {
@@ -293,7 +364,7 @@ export default function ChatInterface() {
                                             {otherParts.length > 0 && (
                                                 <div className="my-2 space-y-2">
                                                     {otherParts.map((part, idx: number) => (
-                                                        <AgentMessagePart key={idx} part={part} />
+                                                        <AgentMessagePart key={idx} part={part} onOpenInIde={onOpenInIde} />
                                                     ))}
                                                 </div>
                                             )}
@@ -311,16 +382,38 @@ export default function ChatInterface() {
                 </ConversationContent>
                 <ConversationScrollButton />
             </Conversation>
-                </TabsContent>
+    );
 
-                <TabsContent value="trajectory" className="min-h-0 flex-1">
-                    <TrajectoryPanel
-                        events={trajectoryEvents}
-                        mode="live"
-                        isStreaming={status === "streaming" || status === "submitted"}
-                    />
-                </TabsContent>
-            </Tabs>
+    return (
+        <div className={embedded ? "relative flex h-full min-h-0 flex-col divide-y overflow-hidden" : "relative flex h-[calc(100vh-80px)] flex-col divide-y overflow-hidden"}>
+            {embedded ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                    {conversationView}
+                </div>
+            ) : (
+                <Tabs defaultValue="conversation" className="flex min-h-0 flex-1 flex-col">
+                    <div className="flex items-center justify-between border-b border-border bg-card px-4 py-1.5">
+                        <TabsList variant="line">
+                            <TabsTrigger value="conversation">Conversation</TabsTrigger>
+                            <TabsTrigger value="trajectory">
+                                Trajectory{trajectoryEvents.length > 0 ? ` (${trajectoryEvents.length})` : ""}
+                            </TabsTrigger>
+                        </TabsList>
+                    </div>
+
+                    <TabsContent value="conversation" className="flex min-h-0 flex-1 flex-col">
+                        {conversationView}
+                    </TabsContent>
+
+                    <TabsContent value="trajectory" className="min-h-0 flex-1">
+                        <TrajectoryPanel
+                            events={trajectoryEvents}
+                            mode="live"
+                            isStreaming={status === "streaming" || status === "submitted"}
+                        />
+                    </TabsContent>
+                </Tabs>
+            )}
             <div className="grid shrink-0 gap-4 pt-4">
                 <div className="w-full px-4 pb-4">
                     {downloadedLlmModels.length === 0 && (

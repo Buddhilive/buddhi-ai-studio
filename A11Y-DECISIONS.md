@@ -59,3 +59,14 @@
   - Pre-installed `shadcn/ui` primitives (`Dialog`, `Tabs`, `Table`, `Input`, `Label`, `Button`, `Alert`) use `@base-ui/react` / native HTML semantics, explicit `aria-label` on icon-only close buttons, and `role="alert"` on alert banners.
 - **Studio ToolCard Category Badges (`src/components/ai-elements/tool.tsx`)**:
   - Category icons (`SearchIcon`, `GlobeIcon`, `DatabaseIcon`, `LayersIcon`, `ShieldCheckIcon`, `BookOpenIcon`) are marked `aria-hidden="true"` and paired with visible textual `Badge` labels (`SearXNG`, `Crawl4AI`, `Database`, `Next.js Stack`, `BetterAuth`, `Skill`) so status and category never rely solely on color or iconography.
+
+## 10. Build Dashboard, AI Elements & Interactive IDE (`013-build-dashboard-ai`)
+- **Build Dashboard & Create Project Dialog (`src/components/build/build-dashboard.tsx`, `src/components/build/create-project-dialog.tsx`)**:
+  - View layout toggle (`Grid` / `List`) uses `role="group"` with `aria-pressed` states; project cards/rows have unbroken `focus-visible:ring-2 focus-visible:ring-ring` rings.
+  - `CreateProjectDialog` uses `@base-ui/react` `Dialog` with `useId()`-bound `<Label htmlFor>` associations, `aria-busy={isSubmitting}`, `role="alert"` validation errors, and an `aria-live="polite"` status announcement region.
+- **WAI-ARIA FileTree (`src/components/ai-elements/file-tree.tsx`)**:
+  - Implements `role="tree"` and `role="treeitem"` with `aria-level`, `aria-expanded`, `aria-selected`, roving `tabIndex`, and full keyboard navigation (`ArrowUp`/`ArrowDown`/`ArrowLeft`/`ArrowRight`/`Enter`/`Space`).
+- **Environment Variables Secret Masking (`src/components/ai-elements/environment-variables.tsx`)**:
+  - Masks sensitive keys (`*SECRET*`, `*KEY*`, `*TOKEN*`, `*PASSWORD*`, `DATABASE_URL`, credentialed URLs) by default (`••••••••`) with per-row reveal toggles (`aria-pressed`, `aria-label="Reveal <KEY>"`).
+- **IDE Workspace (`src/components/ide/ide-editor-pane.tsx`, `src/components/ide/ide-bottom-dock.tsx`)**:
+  - Multi-tab editor uses `role="tablist"` / `role="tab"` with `aria-selected`, explicit `aria-label="Close <file>"` buttons, `Ctrl+S` / `Cmd+S` save interception with `aria-live="polite"` save status announcements, and `DESIGN.md` semantic OKLCH tokens verified under `check_contrast` (`profile="standard"`).

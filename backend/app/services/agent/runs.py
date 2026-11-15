@@ -66,6 +66,21 @@ class AgentRunManager:
 
     async def _run_loop(self, run_id: str, request: AgentRunRequest, emitter: AgentEventEmitter) -> None:
         session_id = request.session_id
+        project_id = request.project_id
+        db_dialect: str | None = None
+        if project_id:
+            from app.services.build_project_service import build_project_service
+
+            try:
+                proj = await build_project_service.storage.aget_project(project_id)
+                if proj:
+                    db_dialect = proj.get("db_dialect")
+                if not session_id:
+                    session_id = await build_project_service.ensure_project_session(project_id)
+            except Exception as exc:
+                logger.warning("Failed resolving build project session for %s: %s", project_id, exc)
+
+        persistent_session = bool(request.session_id or project_id)
         final_status: AgentRunStatus = "completed"
         final_output: str | None = None
         steps_taken = 0
@@ -108,7 +123,10 @@ class AgentRunManager:
             "egm_artifacts": {},
             "concepts_brief": None,
             "drift_report": None,
-            "workspace_id": request.workspace_id or "default",
+            "workspace_id": request.workspace_id or project_id or "default",
+            "project_id": project_id,
+            "db_dialect": db_dialect,
+            "persistent_session": persistent_session,
             "harness_mode": harness_mode,
             "harness_overlay": None,
             "harness_experiences": [],
@@ -168,8 +186,16 @@ class AgentRunManager:
             await emitter.emit_error(f"Agent execution failure: {str(exc)}", code="execution_error")
 
         finally:
-            # Terminate sandbox session to prevent resource leaks EXCEPT when awaiting human approval
-            if session_id and final_status != "awaiting_approval":
+            if project_id and session_id:
+                try:
+                    from app.services.build_project_service import build_project_service
+
+                    await build_project_service.sync_workspace_to_storage(project_id, session_id)
+                except Exception as exc:
+                    logger.warning("Post-run workspace sync failed for %s: %s", project_id, exc)
+
+            # Terminate sandbox session to prevent resource leaks EXCEPT when persistent or awaiting human approval
+            if session_id and not persistent_session and final_status != "awaiting_approval":
                 try:
                     await sandbox_service.terminate_session(session_id)
                 except Exception as exc:
