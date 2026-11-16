@@ -383,6 +383,15 @@ class BuildProjectService:
                     continue
                 await sandbox_service.write_session_file(new_sid, norm_path, content)
                 restored_count += 1
+            if row.get("template", "nextjs-vibe") == "nextjs-vibe":
+                await sandbox_service.execute_in_session(
+                    new_sid,
+                    SandboxExecutionRequest(
+                        code="if [ ! -e /workspace/node_modules ] && [ -d /opt/vibe-starter/node_modules ]; then ln -sfn /opt/vibe-starter/node_modules /workspace/node_modules; fi",
+                        language="bash",
+                        timeout_s=5,
+                    ),
+                )
             hydrated_from = "snapshot"
         else:
             template = row.get("template", "nextjs-vibe")
@@ -601,6 +610,65 @@ class BuildProjectService:
         except Exception:
             return BuildPreviewStatusResponse(running=False, port=port, url=None)
 
+    async def start_preview(self, project_id: str, port: int = 3000) -> BuildPreviewStatusResponse:
+        _validate_project_id(project_id)
+        row = await self.storage.aget_project(project_id)
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+        current = await self.get_preview_status(project_id, port=port)
+        if current.running:
+            return current
+
+        sid = await self.ensure_project_session(project_id)
+        p = int(port)
+        launch_cmd = (
+            "cd /workspace && "
+            "if [ ! -f package.json ]; then echo 'NO_PACKAGE_JSON'; exit 1; fi; "
+            "if [ ! -e node_modules ] && [ -d /opt/vibe-starter/node_modules ]; then "
+            "  ln -sfn /opt/vibe-starter/node_modules /workspace/node_modules; "
+            "fi; "
+            f"PORT={p} HOSTNAME=0.0.0.0; export PORT HOSTNAME; "
+            "if node -e \"const p=require('./package.json'); process.exit(p.scripts && p.scripts.dev ? 0 : 1)\" 2>/dev/null; then "
+            f"  if grep -q '\"next\"' package.json 2>/dev/null; then "
+            f"    nohup npm run dev -- --webpack --port {p} --hostname 0.0.0.0 >/tmp/dev-preview.log 2>&1 </dev/null & "
+            "  else "
+            "    nohup npm run dev >/tmp/dev-preview.log 2>&1 </dev/null & "
+            "  fi; "
+            "elif node -e \"const p=require('./package.json'); process.exit(p.scripts && p.scripts.start ? 0 : 1)\" 2>/dev/null; then "
+            "  nohup npm start >/tmp/dev-preview.log 2>&1 </dev/null & "
+            "else "
+            "  echo 'NO_START_SCRIPT'; exit 1; "
+            "fi"
+        )
+        launch = await sandbox_service.execute_in_session(
+            sid,
+            SandboxExecutionRequest(code=launch_cmd, language="bash", timeout_s=15),
+        )
+        if launch.exit_code != 0:
+            reason = (launch.stdout or launch.stderr or "Failed to launch preview server").strip()
+            return BuildPreviewStatusResponse(running=False, port=port, url=None, detail=reason)
+
+        for _ in range(20):
+            await asyncio.sleep(1.0)
+            check = await self.get_preview_status(project_id, port=port)
+            if check.running:
+                return check
+
+        tail = await sandbox_service.execute_in_session(
+            sid,
+            SandboxExecutionRequest(
+                code="tail -n 20 /tmp/dev-preview.log 2>/dev/null || true",
+                language="bash",
+                timeout_s=5,
+            ),
+        )
+        log_tail = (tail.stdout or "").strip()
+        detail = f"Preview server on port {port} did not become ready in time."
+        if log_tail:
+            detail = f"{detail} Log: {log_tail[-400:]}"
+        return BuildPreviewStatusResponse(running=False, port=port, url=None, detail=detail)
+
     async def proxy_preview(
         self, project_id: str, rel_path: str, request: Request, port: int = 3000
     ) -> Response:
@@ -617,16 +685,42 @@ class BuildProjectService:
             base_url = getattr(endpoint, "endpoint", None) or str(endpoint)
             if not base_url.startswith("http"):
                 base_url = f"http://{base_url}"
-            target_url = f"{base_url.rstrip('/')}/{rel_path.lstrip('/')}"
+            upstream_rel_path = rel_path.lstrip("/")
+            if upstream_rel_path.startswith("_pnext/"):
+                upstream_rel_path = "_next/" + upstream_rel_path[len("_pnext/"):]
+            elif upstream_rel_path == "_pnext":
+                upstream_rel_path = "_next"
+            elif upstream_rel_path.startswith("_pnextjs"):
+                upstream_rel_path = "__nextjs" + upstream_rel_path[len("_pnextjs"):]
+            target_url = f"{base_url.rstrip('/')}/{upstream_rel_path}"
             if request.url.query:
                 target_url = f"{target_url}?{request.url.query}"
 
             body = await request.body()
+            stripped_headers = {
+                "host",
+                "cookie",
+                "authorization",
+                "content-length",
+                "origin",
+                "referer",
+                "x-preview-prefix",
+            }
             forward_headers = {
                 k: v
                 for k, v in request.headers.items()
-                if k.lower() not in {"host", "cookie", "authorization", "content-length"}
+                if k.lower() not in stripped_headers and not k.lower().startswith("sec-fetch-")
             }
+            conn_cfg = getattr(sess.sandbox, "connection_config", None)
+            if conn_cfg is not None and hasattr(endpoint, "build_request_headers"):
+                for hk, hv in endpoint.build_request_headers(conn_cfg).items():
+                    if hk.lower() != "user-agent":
+                        forward_headers[hk] = hv
+            else:
+                endpoint_headers = getattr(endpoint, "headers", None)
+                if isinstance(endpoint_headers, dict):
+                    forward_headers.update(endpoint_headers)
+
             async with httpx.AsyncClient(timeout=15.0) as client:
                 upstream = await client.request(
                     request.method,
@@ -634,23 +728,78 @@ class BuildProjectService:
                     headers=forward_headers,
                     content=body if body else None,
                 )
+            if upstream.status_code >= 500:
+                logger.warning(
+                    "Preview upstream returned %d for %s: %s",
+                    upstream.status_code,
+                    target_url,
+                    upstream.text[:500],
+                )
             resp_headers = {
                 k: v
                 for k, v in upstream.headers.items()
                 if k.lower() not in {"content-encoding", "transfer-encoding", "content-length"}
             }
+            preview_prefix = (
+                request.headers.get("x-preview-prefix")
+                or f"/v1/build/projects/{project_id}/preview"
+            ).rstrip("/")
+            content = _rewrite_preview_body(
+                upstream.content,
+                resp_headers.get("content-type", ""),
+                preview_prefix,
+            )
             resp_headers["X-Content-Type-Options"] = "nosniff"
             resp_headers["Content-Security-Policy"] = "frame-ancestors 'self'"
+            resp_headers["Access-Control-Allow-Origin"] = "*"
             return Response(
-                content=upstream.content,
+                content=content,
                 status_code=upstream.status_code,
                 headers=resp_headers,
             )
         except Exception as exc:
+            logger.warning("Preview proxy failed for %s (port %d): %s", project_id, port, exc)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"Preview server on port {port} is unreachable: {exc}",
             ) from exc
+
+
+_HTML_ATTR_RE = re.compile(r'((?:href|src|action)=["\'])/(?!/)')
+_CSS_URL_RE = re.compile(r'(url\(\s*["\']?)/(?!/)')
+_NEXT_PATH_RE = re.compile(r'(?<![A-Za-z0-9_./-])/_next/')
+_NEXTJS_INTERNAL_RE = re.compile(r'(?<![A-Za-z0-9_./-])/__nextjs')
+
+
+def _rewrite_preview_body(content: bytes, content_type: str, prefix: str) -> bytes:
+    """Rewrite root-relative asset URLs so proxied preview assets resolve under `prefix`.
+
+    Next.js dev server's cross-site guard blocks any URL containing `/_next` or `/__nextjs`
+    when requested from a sandboxed iframe's opaque origin, so those segments are aliased
+    to `/_pnext` and `/_pnextjs` through the host proxy and restored upstream.
+    """
+    if not prefix or not content:
+        return content
+    ct = content_type.lower()
+    if "text/html" in ct:
+        text = content.decode("utf-8", errors="replace")
+        text = _HTML_ATTR_RE.sub(rf"\1{prefix}/", text)
+        text = _NEXT_PATH_RE.sub(f"{prefix}/_pnext/", text)
+        text = text.replace(f"{prefix}/_next/", f"{prefix}/_pnext/")
+        text = _NEXTJS_INTERNAL_RE.sub(f"{prefix}/_pnextjs", text)
+        text = text.replace(f"{prefix}/__nextjs", f"{prefix}/_pnextjs")
+        return text.encode("utf-8")
+    if "text/css" in ct:
+        text = content.decode("utf-8", errors="replace")
+        text = _CSS_URL_RE.sub(rf"\1{prefix}/", text)
+        text = text.replace(f"{prefix}/_next/", f"{prefix}/_pnext/")
+        return text.encode("utf-8")
+    if "javascript" in ct or "ecmascript" in ct:
+        text = content.decode("utf-8", errors="replace")
+        text = _NEXT_PATH_RE.sub(f"{prefix}/_pnext/", text)
+        text = _NEXTJS_INTERNAL_RE.sub(f"{prefix}/_pnextjs", text)
+        return text.encode("utf-8")
+    return content
 
 
 build_project_service = BuildProjectService()

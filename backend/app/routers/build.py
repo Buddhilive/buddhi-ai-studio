@@ -100,6 +100,14 @@ async def get_build_preview_status(
     return await build_project_service.get_preview_status(project_id, port=port)
 
 
+@router.post("/projects/{project_id}/preview/start", response_model=BuildPreviewStatusResponse)
+async def start_build_preview(
+    project_id: str = ProjectIdParam,
+    port: int = Query(3000, ge=1, le=65535),
+) -> BuildPreviewStatusResponse:
+    return await build_project_service.start_preview(project_id, port=port)
+
+
 @router.api_route(
     "/projects/{project_id}/preview",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE"],

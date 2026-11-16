@@ -81,3 +81,4 @@ class BuildPreviewStatusResponse(BaseModel):
     running: bool = False
     port: int = 3000
     url: str | None = None
+    detail: str | None = None

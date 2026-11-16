@@ -252,6 +252,7 @@ export function IdeWorkspace({ projectId }: { projectId: string }) {
             isSaving={isSaving}
             saveAnnouncement={saveAnnouncement}
             previewUrl={`/api/build/projects/${encodeURIComponent(projectId)}/preview/`}
+            previewStartUrl={`/api/build/projects/${encodeURIComponent(projectId)}/preview/start`}
           />
 
           <IdeBottomDock

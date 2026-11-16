@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Code2Icon, EyeIcon, GlobeIcon, SaveIcon, XIcon } from "lucide-react";
+import { Code2Icon, EyeIcon, GlobeIcon, Loader2Icon, RefreshCwIcon, SaveIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WebPreview } from "@/components/ai-elements/web-preview";
@@ -24,6 +24,7 @@ interface IdeEditorPaneProps {
   isSaving?: boolean;
   saveAnnouncement?: string;
   previewUrl: string;
+  previewStartUrl?: string;
   activeLine?: number;
 }
 
@@ -37,10 +38,44 @@ export function IdeEditorPane({
   isSaving = false,
   saveAnnouncement = "",
   previewUrl,
+  previewStartUrl,
 }: IdeEditorPaneProps) {
   const [stageMode, setStageMode] = React.useState<"code" | "web-preview" | "jsx-preview">("code");
+  const [previewState, setPreviewState] = React.useState<"idle" | "starting" | "ready" | "error">(
+    previewStartUrl ? "idle" : "ready"
+  );
+  const [previewError, setPreviewError] = React.useState<string | null>(null);
   const activeFile = openFiles.find((f) => f.path === activeFilePath) || null;
   const isDirty = Boolean(activeFile && activeFile.content !== activeFile.savedContent);
+
+  const ensurePreviewStarted = React.useCallback(async () => {
+    if (!previewStartUrl) {
+      setPreviewState("ready");
+      return;
+    }
+    setPreviewState("starting");
+    setPreviewError(null);
+    try {
+      const res = await fetch(previewStartUrl, { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as {
+        running?: boolean;
+        detail?: string;
+      };
+      if (res.ok && data.running) {
+        setPreviewState("ready");
+      } else {
+        setPreviewState("error");
+        setPreviewError(
+          data.detail || "Preview server is not running on port 3000."
+        );
+      }
+    } catch (err) {
+      setPreviewState("error");
+      setPreviewError(
+        err instanceof Error ? err.message : "Failed to start preview server."
+      );
+    }
+  }, [previewStartUrl]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
@@ -123,7 +158,13 @@ export function IdeEditorPane({
 
           <Tabs
             value={stageMode}
-            onValueChange={(v) => setStageMode(v as "code" | "web-preview" | "jsx-preview")}
+            onValueChange={(v) => {
+              const next = v as "code" | "web-preview" | "jsx-preview";
+              setStageMode(next);
+              if (next === "web-preview" && previewStartUrl && previewState === "idle") {
+                void ensurePreviewStarted();
+              }
+            }}
           >
             <TabsList className="h-7">
               <TabsTrigger value="code" className="gap-1 px-2 text-[11px]">
@@ -154,7 +195,37 @@ export function IdeEditorPane({
       <div className="min-h-0 flex-1 overflow-auto">
         {stageMode === "web-preview" ? (
           <div className="h-full p-3">
-            <WebPreview url={previewUrl} className="h-full" />
+            {previewState === "ready" ? (
+              <WebPreview url={previewUrl} className="h-full" />
+            ) : previewState === "error" ? (
+              <div
+                role="alert"
+                className="flex h-full flex-col items-center justify-center gap-3 rounded-lg border border-border bg-card p-6 text-center text-xs"
+              >
+                <p className="max-w-md text-muted-foreground">
+                  {previewError || "Preview server failed to start."}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void ensurePreviewStarted()}
+                  className="gap-1.5"
+                >
+                  <RefreshCwIcon className="size-3.5" aria-hidden="true" />
+                  <span>Retry Preview</span>
+                </Button>
+              </div>
+            ) : (
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-border bg-card p-6 text-center text-xs text-muted-foreground"
+              >
+                <Loader2Icon className="size-5 animate-spin text-primary" aria-hidden="true" />
+                <span>Starting preview server on port 3000...</span>
+              </div>
+            )}
           </div>
         ) : stageMode === "jsx-preview" ? (
           <div className="p-3">
